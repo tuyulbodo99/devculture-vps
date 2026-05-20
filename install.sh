@@ -1,97 +1,166 @@
 #!/bin/bash
-  # ============================================================
-  #  DevCulture VPS - All-in-One Installer
-  #  Supports: Ubuntu 16/18/20/22/24 | Debian 9/10/11/12
-  #  Repo: https://github.com/tuyulbodo99/devculture-vps
-  # ============================================================
-  set -euo pipefail
-  RED='\e[1;31m';GREEN='\e[1;32m';YELLOW='\e[1;33m';CYAN='\e[1;36m';NC='\e[0m'
-  green()  { echo -e "\033[32;1m${*}\033[0m"; }
-  red()    { echo -e "\033[31;1m${*}\033[0m"; }
-  yellow() { echo -e "\033[33;1m${*}\033[0m"; }
-  cyan()   { echo -e "\033[36;1m${*}\033[0m"; }
+# =================================================================
+#   DevCulture VPS — Premium All-in-One Installer v2.0
+#   github.com/tuyulbodo99/devculture-vps | @devculturebot
+# =================================================================
+set -euo pipefail
+mkdir -p /var/log
+exec > >(tee -a /var/log/devculture-install.log) 2>&1
 
-  LOG_FILE="/var/log/devculture-install.log"
-  mkdir -p /var/log; exec > >(tee -a "$LOG_FILE") 2>&1
-  trap 'red "ERROR baris $LINENO"; exit 1' ERR
+LIB_URL="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/lib/utils.sh"
+TMP_LIB=$(mktemp /tmp/dc-lib-XXXXX.sh)
+if wget -qO "$TMP_LIB" "$LIB_URL" 2>/dev/null \
+   || curl -fsSL "$LIB_URL" -o "$TMP_LIB" 2>/dev/null; then
+  source "$TMP_LIB"; rm -f "$TMP_LIB"
+else
+  echo "ERROR: Gagal download library. Cek koneksi internet."
+  rm -f "$TMP_LIB"; exit 1
+fi
 
-  detect_os() {
-    source /etc/os-release 2>/dev/null || true
-    OS_ID="${ID:-unknown}"; OS_VER="${VERSION_ID:-0}"
-    OS_CODENAME="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null || echo -)}"
-    OS_MAJOR=$(echo "$OS_VER" | cut -d. -f1 | tr -dc '0-9'); [[ "$OS_MAJOR" =~ ^[0-9]+$ ]] || OS_MAJOR=0
-  }
-  check_root()   { [[ ${EUID} -eq 0 ]] || { red "Harus root!"; exit 1; }; }
-  check_virt()   { [[ "$(systemd-detect-virt 2>/dev/null)" == "openvz" ]] && red "OpenVZ tidak didukung." && exit 1; return 0; }
-  check_internet() {
-    yellow "Cek internet..."
-    ping -c1 -W3 8.8.8.8 >/dev/null 2>&1 || curl -s --max-time 5 https://google.com >/dev/null 2>&1 || { red "Tidak ada internet!"; exit 1; }
-    green "  [OK] Internet terhubung"
-  }
-  check_disk()   { local F=$(df -m / | awk 'NR==2{print $4}'); [[ $F -lt 300 ]] && { red "Disk kurang: ${F}MB"; exit 1; }; green "  [OK] Disk: ${F}MB"; }
+setup_trap; check_root; detect_os; check_virt; get_sysinfo
 
-  safe_dl() {
-    local URL="$1" OUT="$2" i=0
-    while [[ $i -lt 3 ]]; do
-      wget -qO "$OUT" "$URL" 2>/dev/null && return 0
-      curl -fsSL "$URL" -o "$OUT" 2>/dev/null && return 0
-      i=$((i+1)); sleep 3
-    done; return 1
-  }
-
-  BASE="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main"
-  check_root; detect_os; check_virt
-
+show_banner() {
   clear
-  echo -e "${CYAN}============================================================${NC}"
-  echo -e "${CYAN}  DEVCULTURE VPS | $OS_ID $OS_VER ($OS_CODENAME)${NC}"
-  echo -e "${CYAN}  github.com/tuyulbodo99/devculture-vps${NC}"
-  echo -e "${CYAN}============================================================${NC}"
+  echo -e "${BBLUE}"
+  cat << 'LOGO'
+  ██████╗ ███████╗██╗   ██╗ ██████╗██╗   ██╗██╗  ████████╗██╗   ██╗██████╗ ███████╗
+  ██╔══██╗██╔════╝██║   ██║██╔════╝██║   ██║██║  ╚══██╔══╝██║   ██║██╔══██╗██╔════╝
+  ██║  ██║█████╗  ██║   ██║██║     ██║   ██║██║     ██║   ██║   ██║██████╔╝█████╗
+  ██║  ██║██╔══╝  ╚██╗ ██╔╝██║     ██║   ██║██║     ██║   ██║   ██║██╔══██╗██╔══╝
+  ██████╔╝███████╗ ╚████╔╝ ╚██████╗╚██████╔╝███████╗██║   ╚██████╔╝██║  ██║███████╗
+  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+LOGO
+  echo -e "${RESET}"
+  echo -e "  ${BCYAN}${BOLD}              Premium VPS Management Suite  v${VERSION}${RESET}"
+  echo -e "  ${DIM}              github.com/tuyulbodo99/devculture-vps${RESET}"
   echo ""
-  yellow ">>> Pre-flight checks..."
-  check_internet; check_disk
-  echo ""
-  green " [1]  Install Full VPS (SSH + Xray + WS + VPN)"
-  green " [2]  Install Dependencies Only"
-  green " [3]  Install SSH & WebSocket Only"
-  green " [4]  Install Xray Only"
-  green " [5]  Install Telegram Bot"
-  green " [6]  Setup SSL Auto-Renewal"
-  green " [7]  Install UDP Support (UDPGW + mKCP + OpenVPN UDP)"
-  green " [8]  Update Scripts"
-  green " [9]  Uninstall DevCulture VPS"
-  green " [0]  Exit"
-  echo ""
-  read -rp "Pilih menu [0-9]: " CHOICE
+}
 
-  run() {
-    local TMP=$(mktemp /tmp/dc-XXXXX.sh)
-    safe_dl "$BASE/$1" "$TMP" && chmod +x "$TMP" && bash "$TMP" || { red "$1 gagal!"; rm -f "$TMP"; exit 1; }
-    rm -f "$TMP"
-  }
+show_sysinfo() {
+  echo -e "${BBLUE}${LINE_TOP}${RESET}"
+  box_line "${BOLD}${BYELLOW}  ◈  SYSTEM INFORMATION${RESET}"
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  box_line "  ${BCYAN}IP Address ${RESET}: ${BWHITE}${SYS_IP}${RESET}"
+  box_line "  ${BCYAN}OS         ${RESET}: ${BWHITE}${OS_ID^} ${OS_VER} (${OS_CODENAME})${RESET}"
+  box_line "  ${BCYAN}Kernel     ${RESET}: ${BWHITE}${SYS_KERNEL}${RESET}"
+  box_line "  ${BCYAN}CPU Cores  ${RESET}: ${BWHITE}${SYS_CPU} core(s)  |  Load: ${SYS_LOAD}${RESET}"
+  box_line "  ${BCYAN}RAM        ${RESET}: ${BWHITE}${SYS_RAM}${RESET}"
+  box_line "  ${BCYAN}Disk       ${RESET}: ${BWHITE}${SYS_DISK}${RESET}"
+  box_line "  ${BCYAN}Uptime     ${RESET}: ${BWHITE}${SYS_UPTIME}${RESET}"
+  box_line "  ${BCYAN}Node.js    ${RESET}: ${BWHITE}${NODE_VER}${RESET}"
+  echo -e "${BBLUE}${LINE_BOT}${RESET}"
+  echo ""
+}
+
+show_menu() {
+  echo -e "${BBLUE}${LINE_TOP}${RESET}"
+  box_line "${BOLD}${BYELLOW}  ◈  DEVCULTURE VPS — MAIN MENU${RESET}"
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  box_line "  ${BGREEN}[1]${RESET}  Install Full VPS  ${DIM}(SSH + Xray + WS + VPN + Bot)${RESET}"
+  box_line "  ${BGREEN}[2]${RESET}  Install Dependencies Only"
+  box_line "  ${BGREEN}[3]${RESET}  Install SSH & WebSocket"
+  box_line "  ${BGREEN}[4]${RESET}  Install Xray  ${DIM}(VLESS / VMess / Trojan)${RESET}"
+  box_line "  ${BGREEN}[5]${RESET}  Install Telegram Bot Manager"
+  box_line "  ${BGREEN}[6]${RESET}  Setup SSL Auto-Renewal"
+  box_line "  ${BGREEN}[7]${RESET}  Install UDP Support  ${DIM}(UDPGW + mKCP + OpenVPN)${RESET}"
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  box_line "  ${BYELLOW}[8]${RESET}  Update All Scripts"
+  box_line "  ${BYELLOW}[9]${RESET}  Manage SSH Users"
+  box_line "  ${BYELLOW}[s]${RESET}  System & Service Status"
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  box_line "  ${BRED}[u]${RESET}  Uninstall DevCulture VPS"
+  box_line "  ${DIM}[0]  Exit${RESET}"
+  echo -e "${BBLUE}${LINE_BOT}${RESET}"
+  echo ""
+  printf "  ${BWHITE}Choice${RESET} ${DIM}›${RESET} "
+}
+
+show_status() {
+  show_banner
+  echo -e "${BBLUE}${LINE_TOP}${RESET}"
+  box_line "${BOLD}${BYELLOW}  ◈  SERVICE STATUS${RESET}"
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  local SVCS=("xray" "devculture-bot" "nginx" "dropbear" "stunnel4"
+               "openvpn@server-udp" "udpgw" "fail2ban" "vnstat")
+  for S in "${SVCS[@]}"; do
+    local ST; ST=$(systemctl is-active "$S" 2>/dev/null || echo "inactive")
+    if [[ "$ST" == "active" ]]; then
+      box_line "  ${BGREEN}●${RESET}  ${BWHITE}%-24s${RESET}  ${BGREEN}[RUNNING]${RESET}" "$S"
+    else
+      box_line "  ${BRED}○${RESET}  ${DIM}%-24s  [${ST}]${RESET}" "$S"
+    fi
+  done
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  box_line "${BOLD}${BYELLOW}  ◈  OPEN UDP PORTS${RESET}"
+  echo -e "${BBLUE}${LINE_SEP}${RESET}"
+  local PORTS
+  PORTS=$(ss -tulnp 2>/dev/null | awk '/udp/{print "  " $5}' | head -8 \
+       || netstat -tulnp 2>/dev/null | awk '/udp/{print "  " $4}' | head -8 \
+       || echo "  (install net-tools untuk lihat port)")
+  while IFS= read -r line; do box_line "$line"; done <<< "$PORTS"
+  echo -e "${BBLUE}${LINE_BOT}${RESET}"
+  echo ""
+  read -rp "  Tekan Enter untuk kembali..." _
+}
+
+run_script() {
+  local SCRIPT="$1"
+  local TMP; TMP=$(mktemp /tmp/dc-XXXXX.sh)
+  info "Mengunduh ${SCRIPT}..."
+  safe_dl "${BASE_URL}/${SCRIPT}" "$TMP" || { error "Gagal download ${SCRIPT}"; rm -f "$TMP"; return 1; }
+  chmod +x "$TMP"
+  bash "$TMP" "$OS_ID" "$OS_VER" || { error "Script gagal: ${SCRIPT}"; rm -f "$TMP"; return 1; }
+  rm -f "$TMP"
+}
+
+preflight() {
+  echo ""; step "Pre-flight checks..."; echo ""
+  check_internet; check_disk 300; check_ram 256
+  echo ""
+}
+
+# ── Main loop ────────────────────────────────────────────────────
+while true; do
+  show_banner
+  show_sysinfo
+  show_menu
+  read -r CHOICE
 
   case "$CHOICE" in
     1)
-      run "dependencies.sh"
-      run "setup.sh"
-      run "bot/install-bot.sh"
-      run "udp/install-udp.sh"
-      safe_dl "$BASE/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh && chmod +x /usr/local/bin/ssl-renew.sh && bash /usr/local/bin/ssl-renew.sh install
+      preflight
+      run_script "dependencies.sh"
+      run_script "setup.sh"
+      run_script "bot/install-bot.sh"
+      run_script "udp/install-udp.sh"
+      safe_dl "${BASE_URL}/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh
+      chmod +x /usr/local/bin/ssl-renew.sh
+      bash /usr/local/bin/ssl-renew.sh install
+      echo ""; success "Instalasi penuh selesai!"
       ;;
-    2) run "dependencies.sh" ;;
-    3) run "ssh/ssh-vpn.sh" ;;
-    4) run "xray/ins-xray.sh" ;;
-    5) run "bot/install-bot.sh" ;;
-    6) safe_dl "$BASE/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh && chmod +x /usr/local/bin/ssl-renew.sh && bash /usr/local/bin/ssl-renew.sh install ;;
-    7) run "udp/install-udp.sh" ;;
-    8) run "update/update.sh" ;;
-    9) safe_dl "$BASE/uninstall.sh" /tmp/dc-uninstall.sh && chmod +x /tmp/dc-uninstall.sh && bash /tmp/dc-uninstall.sh ;;
-    0) exit 0 ;;
-    *) red "Pilihan tidak valid!"; exit 1 ;;
+    2) preflight; run_script "dependencies.sh" ;;
+    3) preflight; run_script "ssh/ssh-vpn.sh" ;;
+    4) preflight; run_script "xray/ins-xray.sh" ;;
+    5) preflight; run_script "bot/install-bot.sh" ;;
+    6)
+      safe_dl "${BASE_URL}/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh
+      chmod +x /usr/local/bin/ssl-renew.sh
+      bash /usr/local/bin/ssl-renew.sh install
+      ;;
+    7) preflight; run_script "udp/install-udp.sh" ;;
+    8) run_script "update/update.sh" ;;
+    9) run_script "ssh/manage-users.sh" ;;
+    s|S) show_status; continue ;;
+    u|U)
+      printf "  ${BRED}Ketik HAPUS untuk konfirmasi:${RESET} "; read -r CONF
+      [[ "$CONF" == "HAPUS" ]] && run_script "uninstall.sh" || warn "Dibatalkan."
+      ;;
+    0)
+      echo ""; info "Terima kasih telah menggunakan DevCulture VPS!"; echo ""; exit 0 ;;
+    *)
+      warn "Pilihan tidak valid.";;
   esac
 
-  green ""
-  green "============================================================"
-  green "  Selesai! Log: $LOG_FILE"
-  green "============================================================"
-  
+  echo ""
+  read -rp "  Tekan Enter untuk kembali ke menu..." _
+done
