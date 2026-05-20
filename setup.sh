@@ -1,16 +1,16 @@
 #!/bin/bash
-dateFromServer=$(curl -v --insecure --silent https://google.com/ 2>&1 | grep Date | sed -e 's/< Date: //')
-biji=`date +"%Y-%m-%d" -d "$dateFromServer"`
+dateFromServer=$(curl -fsSL https://google.com/ 2>&1 | grep Date | sed -e 's/< Date: //')
+biji=$(date +"%Y-%m-%d" -d "$dateFromServer")
 #########################
 
 BURIQ () {
     curl -sS https://raw.githubusercontent.com/tuyulbodo99/ijin/main/youtube > /root/tmp
-    data=( `cat /root/tmp | grep -E "^### " | awk '{print $2}'` )
+    data=( $(cat /root/tmp | grep -E "^### " | awk '{print $2}') )
     for user in "${data[@]}"
     do
     exp=( `grep -E "^### $user" "/root/tmp" | awk '{print $3}'` )
-    d1=(`date -d "$exp" +%s`)
-    d2=(`date -d "$biji" +%s`)
+    d1=($(date -d "$exp" +%s))
+    d2=($(date -d "$biji" +%s))
     exp2=$(( (d1 - d2) / 86400 ))
     if [[ "$exp2" -le "0" ]]; then
     echo $user > /etc/.$user.ini
@@ -71,8 +71,8 @@ if [ "$(systemd-detect-virt)" == "openvz" ]; then
 fi
 
 localip=$(hostname -I | cut -d\  -f1)
-hst=( `hostname` )
-dart=$(cat /etc/hosts | grep -w `hostname` | awk '{print $2}')
+hst=( $(hostname) )
+dart=$(cat /etc/hosts | grep -w $(hostname) | awk '{print $2}')
 if [[ "$hst" != "$dart" ]]; then
 echo "$localip $(hostname)" >> /etc/hosts
 fi
@@ -84,7 +84,7 @@ echo -e "[ ${tyblue}NOTES${NC} ] I need check your headers first.."
 sleep 2
 echo -e "[ ${green}INFO${NC} ] Checking headers"
 sleep 1
-totet=`uname -r`
+totet=$(uname -r)
 REQUIRED_PKG="linux-headers-$totet"
 PKG_OK=$(dpkg-query -W --showformat='${Status}\n' $REQUIRED_PKG|grep "install ok installed")
 echo Checking for $REQUIRED_PKG: $PKG_OK
@@ -119,7 +119,7 @@ else
   echo -e "[ ${green}INFO${NC} ] Oke installed"
 fi
 
-ttet=`uname -r`
+ttet=$(uname -r)
 ReqPKG="linux-headers-$ttet"
 if ! dpkg -s $ReqPKG  >/dev/null 2>&1; then
   rm /root/setup.sh >/dev/null 2>&1 
@@ -172,10 +172,10 @@ exit 0
 fi
 sleep 3
 
-mkdir -p /etc/hokagevpnn
-mkdir -p /etc/hokagevpn/theme
-mkdir -p /var/lib/hokagevpn-pro >/dev/null 2>&1
-echo "IP=" >> /var/lib/hokagevpn-pro/ipvps.conf
+mkdir -p /etc/devculturevpnn
+mkdir -p /etc/devculturevpn/theme
+mkdir -p /var/lib/devculturevpn-pro >/dev/null 2>&1
+echo "IP=" >> /var/lib/devculturevpn-pro/ipvps.conf
 
 if [ -f "/etc/xray/domain" ]; then
 echo ""
@@ -203,40 +203,40 @@ echo "$pp" > /root/domain
 echo "$pp" > /root/scdomain
 echo "$pp" > /etc/xray/domain
 echo "$pp" > /etc/xray/scdomain
-echo "IP=$pp" > /var/lib/hokagevpn-pro/ipvps.conf
+echo "IP=$pp" > /var/lib/devculturevpn-pro/ipvps.conf
 
 #THEME RED
-cat <<EOF>> /etc/hokagevpn/theme/red
+cat <<EOF>> /etc/devculturevpn/theme/red
 BG : \E[40;1;41m
 TEXT : \033[0;31m
 EOF
 #THEME BLUE
-cat <<EOF>> /etc/hokagevpn/theme/blue
+cat <<EOF>> /etc/devculturevpn/theme/blue
 BG : \E[40;1;44m
 TEXT : \033[0;34m
 EOF
 #THEME GREEN
-cat <<EOF>> /etc/hokagevpn/theme/green
+cat <<EOF>> /etc/devculturevpn/theme/green
 BG : \E[40;1;42m
 TEXT : \033[0;32m
 EOF
 #THEME YELLOW
-cat <<EOF>> /etc/hokagevpn/theme/yellow
+cat <<EOF>> /etc/devculturevpn/theme/yellow
 BG : \E[40;1;43m
 TEXT : \033[0;33m
 EOF
 #THEME MAGENTA
-cat <<EOF>> /etc/hokagevpn/theme/magenta
+cat <<EOF>> /etc/devculturevpn/theme/magenta
 BG : \E[40;1;43m
 TEXT : \033[0;33m
 EOF
 #THEME CYAN
-cat <<EOF>> /etc/hokagevpn/theme/cyan
+cat <<EOF>> /etc/devculturevpn/theme/cyan
 BG : \E[40;1;46m
 TEXT : \033[0;36m
 EOF
 #THEME CONFIG
-cat <<EOF>> /etc/hokagevpn/theme/color.conf
+cat <<EOF>> /etc/devculturevpn/theme/color.conf
 blue
 EOF
     
@@ -297,7 +297,7 @@ fi
 curl -sS ifconfig.me > /etc/myipvps
 
 echo " "
-echo "====================-[HOKAGE LEGEND]-===================="
+echo "====================-[DevCulture]-===================="
 echo ""
 echo "------------------------------------------------------------"
 echo ""  | tee -a log-install.txt
@@ -335,11 +335,11 @@ echo "   - Backup & Restore Data" | tee -a log-install.txt
 echo "   - Full Orders For Various Services" | tee -a log-install.txt
 echo ""  | tee -a log-install.txt
 echo "   >>> About " | tee -a log-install.txt
-echo "   - Script Presented By      : HOKAGE VPN STORE" | tee -a log-install.txt" | tee -a log-install.txt
+echo "   - Script Presented By      : devculture VPN STORE" | tee -a log-install.txt" | tee -a log-install.txt
 echo "   - Contact (Only Text)      : wa.me/087726917005" | tee -a log-install.txt" | tee -a log-install.txt
 echo "------------------------------------------------------------"
 echo ""
-echo "=============-[ HOKAGE LEGEND ]-==============="
+echo "=============-[ DevCulture ]-==============="
 echo -e ""
 echo ""
 echo "" | tee -a log-install.txt
