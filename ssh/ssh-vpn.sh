@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 #
 # ==================================================
 
@@ -14,13 +15,13 @@ ver=$VERSION_ID
 country=ID
 state=INDONESIA
 locality=TANGERANG
-organization=HOKAGE
-organizationalunit=HOKAGE
-commonname=none
-email=hokagelegend99@gmail.com
+organization=devculture
+organizationalunit=devculture
+commonname=devculture.id
+email=devculturebot@gmail.com
 
 # simple password minimal
-curl -sS https://raw.githubusercontent.com/tuyulbodo99/original/main/ssh/password | openssl aes-256-cbc -d -a -pass pass:scvps07gg -pbkdf2 > /etc/pam.d/common-password
+# NOTE: Password policy managed by admin — /etc/pam.d/common-password
 chmod +x /etc/pam.d/common-password
 
 # go to root
@@ -92,7 +93,7 @@ sed -i 's/AcceptEnv/#AcceptEnv/g' /etc/ssh/sshd_config
 
 install_ssl(){
     if [ -f "/usr/bin/apt-get" ];then
-            isDebian=`cat /etc/issue|grep Debian`
+            isDebian=$(cat /etc/issue|grep Debian)
             if [ "$isDebian" != "" ];then
                     apt-get install -y nginx certbot
                     apt install -y nginx certbot
@@ -110,7 +111,7 @@ install_ssl(){
     systemctl stop nginx.service
 
     if [ -f "/usr/bin/apt-get" ];then
-            isDebian=`cat /etc/issue|grep Debian`
+            isDebian=$(cat /etc/issue|grep Debian)
             if [ "$isDebian" != "" ];then
                     echo "A" | certbot certonly --renew-by-default --register-unsafely-without-email --standalone -d $domain
                     sleep 3s
