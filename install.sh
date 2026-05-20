@@ -2,7 +2,7 @@
   # ============================================================
   #   DevCulture VPS - All-in-One VPS Installer
   #   Repo  : https://github.com/tuyulbodo99/devculture-vps
-  #   Author: tuyulbodo99
+  #   Bot   : @devculturebot
   # ============================================================
 
   RED='\e[1;31m'
@@ -18,13 +18,11 @@
 
   BASE_URL="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main"
 
-  # --- Root check ---
   if [[ ${EUID} -ne 0 ]]; then
     red "Skrip ini harus dijalankan sebagai root!"
     exit 1
   fi
 
-  # --- OS check ---
   if [[ -e /etc/debian_version ]]; then
     source /etc/os-release
     OS=$ID
@@ -33,25 +31,27 @@
     exit 1
   fi
 
-  # --- OpenVZ check ---
   if [[ "$(systemd-detect-virt)" == "openvz" ]]; then
     red "OpenVZ tidak didukung."
     exit 1
   fi
 
   clear
-  cyan "============================================================"
-  cyan "     DEVCULTURE VPS - All-in-One Installer"
-  cyan "============================================================"
+  echo -e "${CYAN}============================================================${NC}"
+  echo -e "${CYAN}        DEVCULTURE VPS - All-in-One Installer               ${NC}"
+  echo -e "${CYAN}        https://github.com/tuyulbodo99/devculture-vps       ${NC}"
+  echo -e "${CYAN}============================================================${NC}"
   echo ""
   green " [1] Install Full VPS (SSH + Xray + WebSocket + VPN)"
   green " [2] Install Dependencies Only"
   green " [3] Install SSH & WebSocket Only"
   green " [4] Install Xray Only"
-  green " [5] Update Scripts"
+  green " [5] Install Telegram Bot Manager"
+  green " [6] Setup SSL Auto-Renewal"
+  green " [7] Update Scripts"
   green " [0] Exit"
   echo ""
-  yellow "Pilih menu: "
+  yellow -n "Pilih menu: "
   read -r CHOICE
 
   case $CHOICE in
@@ -59,6 +59,8 @@
       cyan "Memulai instalasi penuh..."
       bash <(curl -sSL $BASE_URL/dependencies.sh)
       bash <(curl -sSL $BASE_URL/setup.sh)
+      bash <(curl -sSL $BASE_URL/bot/install-bot.sh)
+      bash <(curl -sSL $BASE_URL/ssl/ssl-renew.sh) install
       ;;
     2)
       cyan "Menginstall dependencies..."
@@ -73,6 +75,16 @@
       bash <(curl -sSL $BASE_URL/xray/ins-xray.sh)
       ;;
     5)
+      cyan "Menginstall Telegram Bot Manager..."
+      bash <(curl -sSL $BASE_URL/bot/install-bot.sh)
+      ;;
+    6)
+      cyan "Setup SSL Auto-Renewal..."
+      wget -qO /usr/local/bin/ssl-renew.sh $BASE_URL/ssl/ssl-renew.sh
+      chmod +x /usr/local/bin/ssl-renew.sh
+      bash /usr/local/bin/ssl-renew.sh install
+      ;;
+    7)
       cyan "Mengupdate scripts..."
       bash <(curl -sSL $BASE_URL/update/update.sh)
       ;;
