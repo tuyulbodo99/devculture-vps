@@ -1,0 +1,413 @@
+#!/bin/bash
+# =================================================================
+#   DevCulture VPS — Terminal Command  v3.2.0
+#   Usage: devculture [command]
+#   @devculturebot | github.com/tuyulbodo99/devculture-vps
+# =================================================================
+set -euo pipefail
+
+# ── Colors ─────────────────────────────────────────────────────
+R='\033[0m'
+BOLD='\033[1m'; DIM='\033[2m'
+RED='\033[1;31m'; GRN='\033[1;32m'; YLW='\033[1;33m'
+CYN='\033[1;36m'; WHT='\033[1;37m'; MGT='\033[1;35m'
+BLU='\033[1;34m'
+
+# ── Box drawing ────────────────────────────────────────────────
+LINE='╔══════════════════════════════════════════════════════════╗'
+LSEP='╠══════════════════════════════════════════════════════════╣'
+LDIV='╟──────────────────────────────────────────────────────────╢'
+LBOT='╚══════════════════════════════════════════════════════════╝'
+
+box() {
+  local txt="$1" w=58
+  local plain; plain=$(printf '%b' "$txt" | sed 's/\x1b\[[0-9;]*m//g')
+  local pad=$(( w - ${#plain} )); [[ $pad -lt 0 ]] && pad=0
+  printf "║ %b%${pad}s ║\n" "$txt" ""
+}
+div()  { echo -e "${BLU}${LDIV}${R}"; }
+sep()  { echo -e "${BLU}${LSEP}${R}"; }
+top()  { echo -e "${BLU}${LINE}${R}"; }
+bot()  { echo -e "${BLU}${LBOT}${R}"; }
+
+# ── Service status helper ──────────────────────────────────────
+svc_status() {
+  local name="$1"
+  if systemctl is-active --quiet "$name" 2>/dev/null; then
+    printf "${GRN}● RUNNING${R}"
+  elif systemctl list-units --full -all 2>/dev/null | grep -q "$name"; then
+    printf "${RED}● STOPPED${R}"
+  else
+    printf "${DIM}○ NOT INSTALLED${R}"
+  fi
+}
+
+# ── System info ────────────────────────────────────────────────
+get_sysinfo() {
+  SYS_IP=$(curl -fsSL ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
+  SYS_OS=$(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Unknown OS")
+  SYS_RAM=$(free -h | awk 'NR==2 {printf "%s / %s", $3, $2}')
+  SYS_DISK=$(df -h / | awk 'NR==2 {printf "%s / %s (%s)", $3, $2, $5}')
+  SYS_UPTIME=$(uptime -p 2>/dev/null | sed 's/up //' || echo "N/A")
+  SYS_LOAD=$(uptime | awk -F'load average:' '{print $2}' | xargs)
+  SYS_CPU=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo)
+}
+
+# ── Banner ─────────────────────────────────────────────────────
+show_banner() {
+  clear
+  echo -e "${CYN}"
+  cat << 'LOGO'
+  ██████╗ ███████╗██╗   ██╗ ██████╗██╗   ██╗██╗  ████████╗██╗   ██╗██████╗ ███████╗
+  ██╔══██╗██╔════╝██║   ██║██╔════╝██║   ██║██║  ╚══██╔══╝██║   ██║██╔══██╗██╔════╝
+  ██║  ██║█████╗  ██║   ██║██║     ██║   ██║██║     ██║   ██║   ██║██████╔╝█████╗  
+  ██║  ██║██╔══╝  ╚██╗ ██╔╝██║     ██║   ██║██║     ██║   ██║   ██║██╔══██╗██╔══╝  
+  ██████╔╝███████╗ ╚████╔╝ ╚██████╗╚██████╔╝███████╗██║   ╚██████╔╝██║  ██║███████╗
+  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+LOGO
+  echo -e "${R}"
+  echo -e "  ${CYN}${BOLD}           Premium VPS Management Suite  v3.2.0${R}"
+  echo -e "  ${DIM}           @devculturebot | github.com/tuyulbodo99/devculture-vps${R}"
+  echo ""
+}
+
+# ── System Info panel ──────────────────────────────────────────
+show_sysinfo() {
+  get_sysinfo
+  top
+  box "${BOLD}${YLW}  ◈  SYSTEM INFORMATION${R}"
+  sep
+  box "  ${CYN}IP Address ${R}: ${WHT}${SYS_IP}${R}"
+  box "  ${CYN}OS         ${R}: ${WHT}${SYS_OS}${R}"
+  box "  ${CYN}CPU Cores  ${R}: ${WHT}${SYS_CPU} core(s)  |  Load: ${SYS_LOAD}${R}"
+  box "  ${CYN}RAM        ${R}: ${WHT}${SYS_RAM}${R}"
+  box "  ${CYN}Disk       ${R}: ${WHT}${SYS_DISK}${R}"
+  box "  ${CYN}Uptime     ${R}: ${WHT}${SYS_UPTIME}${R}"
+  bot
+  echo ""
+}
+
+# ── Service status panel ───────────────────────────────────────
+show_services() {
+  top
+  box "${BOLD}${YLW}  ◈  SERVICE STATUS${R}"
+  sep
+  box "  ${CYN}Nginx      ${R}: $(svc_status nginx)"
+  box "  ${CYN}Xray       ${R}: $(svc_status xray)"
+  box "  ${CYN}V2Ray      ${R}: $(svc_status v2ray)"
+  box "  ${CYN}WS-Stunnel ${R}: $(svc_status ws-stunnel)"
+  box "  ${CYN}Dropbear   ${R}: $(svc_status dropbear)"
+  box "  ${CYN}OpenVPN    ${R}: $(svc_status openvpn@server)"
+  box "  ${CYN}Fail2Ban   ${R}: $(svc_status fail2ban)"
+  box "  ${CYN}WireGuard  ${R}: $(svc_status wg-quick@wg0)"
+  bot
+  echo ""
+}
+
+# ── SSH User Management ────────────────────────────────────────
+menu_ssh() {
+  while true; do
+    show_banner
+    top
+    box "${BOLD}${YLW}  ◈  SSH USER MANAGEMENT${R}"
+    sep
+    box "  ${GRN}[1]${R}  Tambah User SSH"
+    box "  ${GRN}[2]${R}  Hapus User SSH"
+    box "  ${GRN}[3]${R}  Cek User SSH Aktif"
+    box "  ${GRN}[4]${R}  Perpanjang User SSH"
+    box "  ${GRN}[5]${R}  List Semua User"
+    div
+    box "  ${RED}[0]${R}  Kembali"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r opt
+    case $opt in
+      1) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/addssh) ;;
+      2) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/delssh) ;;
+      3) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/cekssh) ;;
+      4) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/renewssh) ;;
+      5) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/member) ;;
+      0) break ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Xray/VPN Menu ─────────────────────────────────────────────
+menu_xray() {
+  while true; do
+    show_banner
+    top
+    box "${BOLD}${YLW}  ◈  XRAY / VPN MANAGEMENT${R}"
+    sep
+    box "  ${GRN}[1]${R}  Tambah User VLESS"
+    box "  ${GRN}[2]${R}  Hapus User VLESS"
+    box "  ${GRN}[3]${R}  Cek User VLESS"
+    box "  ${GRN}[4]${R}  Perpanjang VLESS"
+    div
+    box "  ${GRN}[5]${R}  Tambah User VMess"
+    box "  ${GRN}[6]${R}  Hapus User VMess"
+    box "  ${GRN}[7]${R}  Cek User VMess"
+    div
+    box "  ${GRN}[8]${R}  Tambah User Trojan"
+    box "  ${GRN}[9]${R}  Cek User Trojan"
+    div
+    box "  ${RED}[0]${R}  Kembali"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r opt
+    case $opt in
+      1) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/addvless) ;;
+      2) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/delvless) ;;
+      3) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/cekvless) ;;
+      4) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/renewvless) ;;
+      5) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/addws) ;;
+      6) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/delws) ;;
+      7) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/cekws) ;;
+      8) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/addtr) ;;
+      9) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/cektr) ;;
+      0) break ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Service Control ────────────────────────────────────────────
+menu_services() {
+  while true; do
+    show_banner
+    show_services
+    top
+    box "${BOLD}${YLW}  ◈  SERVICE CONTROL${R}"
+    sep
+    box "  ${GRN}[1]${R}  Restart Semua Service"
+    box "  ${GRN}[2]${R}  Restart Nginx"
+    box "  ${GRN}[3]${R}  Restart Xray"
+    box "  ${GRN}[4]${R}  Restart V2Ray"
+    box "  ${GRN}[5]${R}  Restart WebSocket"
+    box "  ${GRN}[6]${R}  Restart OpenVPN"
+    div
+    box "  ${GRN}[7]${R}  Stop Semua Service"
+    box "  ${GRN}[8]${R}  Start Semua Service"
+    div
+    box "  ${RED}[0]${R}  Kembali"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r opt
+    case $opt in
+      1)
+        echo -ne "\n  ${CYN}Restarting all services...${R} "
+        for svc in nginx xray v2ray ws-stunnel dropbear fail2ban; do
+          systemctl restart "$svc" 2>/dev/null && printf "${GRN}${svc}✔${R} " || printf "${RED}${svc}✘${R} "
+        done
+        echo -e "\n  ${GRN}Done.${R}"; sleep 2 ;;
+      2) systemctl restart nginx   && echo -e "\n  ${GRN}Nginx restarted.${R}"   || echo -e "\n  ${RED}Failed.${R}"; sleep 1 ;;
+      3) systemctl restart xray    && echo -e "\n  ${GRN}Xray restarted.${R}"    || echo -e "\n  ${RED}Failed.${R}"; sleep 1 ;;
+      4) systemctl restart v2ray   && echo -e "\n  ${GRN}V2Ray restarted.${R}"   || echo -e "\n  ${RED}Failed.${R}"; sleep 1 ;;
+      5) systemctl restart ws-stunnel && echo -e "\n  ${GRN}WebSocket restarted.${R}" || echo -e "\n  ${RED}Failed.${R}"; sleep 1 ;;
+      6) systemctl restart openvpn@server && echo -e "\n  ${GRN}OpenVPN restarted.${R}" || echo -e "\n  ${RED}Failed.${R}"; sleep 1 ;;
+      7)
+        for svc in nginx xray v2ray ws-stunnel dropbear; do systemctl stop "$svc" 2>/dev/null || true; done
+        echo -e "\n  ${YLW}All services stopped.${R}"; sleep 2 ;;
+      8)
+        for svc in nginx xray v2ray ws-stunnel dropbear fail2ban; do systemctl start "$svc" 2>/dev/null || true; done
+        echo -e "\n  ${GRN}All services started.${R}"; sleep 2 ;;
+      0) break ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Bandwidth/Limit ────────────────────────────────────────────
+menu_bandwidth() {
+  while true; do
+    show_banner
+    top
+    box "${BOLD}${YLW}  ◈  BANDWIDTH & LIMIT${R}"
+    sep
+    box "  ${GRN}[1]${R}  Cek Bandwidth Realtime"
+    box "  ${GRN}[2]${R}  Limit Speed User"
+    box "  ${GRN}[3]${R}  Limit IP User"
+    box "  ${GRN}[4]${R}  Auto Kill Multi-Login"
+    box "  ${GRN}[5]${R}  Monitor Koneksi Aktif"
+    div
+    box "  ${RED}[0]${R}  Kembali"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r opt
+    case $opt in
+      1) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/bw) ;;
+      2) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/limitspeed) ;;
+      3) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/limit-ip-ssh) ;;
+      4) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/autokill) ;;
+      5) ss -tunp | head -50; echo ""; read -rp "  Tekan Enter untuk kembali..." ;;
+      0) break ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Backup & Restore ───────────────────────────────────────────
+menu_backup() {
+  while true; do
+    show_banner
+    top
+    box "${BOLD}${YLW}  ◈  BACKUP & RESTORE${R}"
+    sep
+    box "  ${GRN}[1]${R}  Backup Database User"
+    box "  ${GRN}[2]${R}  Restore Database"
+    box "  ${GRN}[3]${R}  Clear Log System"
+    box "  ${GRN}[4]${R}  Auto Reboot Schedule"
+    div
+    box "  ${RED}[0]${R}  Kembali"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r opt
+    case $opt in
+      1) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/vpn/menu/backup) ;;
+      2) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/backup/restore.sh) ;;
+      3) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/backup/logcleaner.sh) ;;
+      4) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/corn/rebootvps.sh) ;;
+      0) break ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Settings ───────────────────────────────────────────────────
+menu_settings() {
+  while true; do
+    show_banner
+    top
+    box "${BOLD}${YLW}  ◈  SETTINGS & UPDATE${R}"
+    sep
+    box "  ${GRN}[1]${R}  Update DevCulture Script"
+    box "  ${GRN}[2]${R}  Renew SSL Certificate"
+    box "  ${GRN}[3]${R}  Ubah DNS Server"
+    box "  ${GRN}[4]${R}  Set Timezone (WIB/WITA/WIT)"
+    box "  ${GRN}[5]${R}  Ganti Tema Warna"
+    box "  ${GRN}[6]${R}  Info Script & Versi"
+    div
+    box "  ${RED}[0]${R}  Kembali"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r opt
+    case $opt in
+      1) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/update/update.sh) ;;
+      2) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/ssl/ssl-renew.sh) ;;
+      3) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/update/menu-dns.sh) ;;
+      4)
+        echo -e "\n  ${CYN}Pilih timezone:${R}"
+        echo -e "  [1] WIB  (Asia/Jakarta)"
+        echo -e "  [2] WITA (Asia/Makassar)"
+        echo -e "  [3] WIT  (Asia/Jayapura)"
+        echo -ne "\n  Pilihan » "; read -r tz
+        case $tz in
+          1) ln -fs /usr/share/zoneinfo/Asia/Jakarta /etc/localtime ;;
+          2) ln -fs /usr/share/zoneinfo/Asia/Makassar /etc/localtime ;;
+          3) ln -fs /usr/share/zoneinfo/Asia/Jayapura /etc/localtime ;;
+        esac
+        echo -e "  ${GRN}Timezone updated.${R}"; sleep 1 ;;
+      5) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/update/menu-theme.sh) ;;
+      6) bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/update/info.sh) ;;
+      0) break ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Quick commands (non-interactive) ──────────────────────────
+cmd_status() {
+  show_banner
+  show_sysinfo
+  show_services
+}
+
+cmd_restart() {
+  echo -e "\n${CYN}Restarting services...${R}"
+  for svc in nginx xray v2ray ws-stunnel dropbear fail2ban; do
+    systemctl restart "$svc" 2>/dev/null \
+      && echo -e "  ${GRN}✔${R}  $svc" \
+      || echo -e "  ${DIM}○${R}  $svc (not running)"
+  done
+  echo -e "\n${GRN}Done.${R}"
+}
+
+cmd_update() {
+  bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/update/update.sh)
+}
+
+cmd_ssl() {
+  bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/ssl/ssl-renew.sh)
+}
+
+cmd_log() {
+  tail -n 50 /var/log/devculture-install.log 2>/dev/null || echo "No log found."
+}
+
+# ── Help ───────────────────────────────────────────────────────
+cmd_help() {
+  show_banner
+  top
+  box "${BOLD}${YLW}  ◈  USAGE: devculture [COMMAND]${R}"
+  sep
+  box "  ${GRN}devculture${R}            Buka menu utama interaktif"
+  box "  ${GRN}devculture status${R}     Cek status sistem & services"
+  box "  ${GRN}devculture restart${R}    Restart semua service"
+  box "  ${GRN}devculture update${R}     Update script DevCulture"
+  box "  ${GRN}devculture ssl${R}        Renew SSL certificate"
+  box "  ${GRN}devculture log${R}        Lihat log instalasi"
+  box "  ${GRN}devculture help${R}       Tampilkan bantuan ini"
+  div
+  box "  ${DIM}Install: bash <(curl -fsSL${R}"
+  box "  ${DIM}  https://raw.githubusercontent.com/tuyulbodo99/${R}"
+  box "  ${DIM}  devculture-vps/main/install.sh)${R}"
+  bot
+  echo ""
+}
+
+# ── Main Menu ──────────────────────────────────────────────────
+main_menu() {
+  while true; do
+    show_banner
+    show_sysinfo
+    show_services
+    top
+    box "${BOLD}${YLW}  ◈  DEVCULTURE VPS — MAIN MENU${R}"
+    sep
+    box "  ${GRN}[1]${R}  SSH User Management"
+    box "  ${GRN}[2]${R}  Xray / VPN Management"
+    box "  ${GRN}[3]${R}  Service Control"
+    box "  ${GRN}[4]${R}  Bandwidth & Limit"
+    box "  ${GRN}[5]${R}  Backup & Restore"
+    box "  ${GRN}[6]${R}  Settings & Update"
+    div
+    box "  ${CYN}[s]${R}  Cek Status Cepat"
+    box "  ${CYN}[r]${R}  Restart Semua Service"
+    box "  ${CYN}[u]${R}  Update Script"
+    div
+    box "  ${RED}[0]${R}  Keluar"
+    bot
+    echo -ne "\n  ${CYN}Pilihan${R} » "; read -r choice
+
+    case "$choice" in
+      1) menu_ssh ;;
+      2) menu_xray ;;
+      3) menu_services ;;
+      4) menu_bandwidth ;;
+      5) menu_backup ;;
+      6) menu_settings ;;
+      s|S) cmd_status; read -rp "  Tekan Enter untuk lanjut..." ;;
+      r|R) cmd_restart; sleep 2 ;;
+      u|U) cmd_update ;;
+      0|q|Q|exit) echo -e "\n  ${DIM}Sampai jumpa! — @devculturebot${R}\n"; exit 0 ;;
+      *) echo -e "\n  ${RED}Pilihan tidak valid.${R}"; sleep 1 ;;
+    esac
+  done
+}
+
+# ── Entry point ────────────────────────────────────────────────
+case "${1:-}" in
+  status)  cmd_status ;;
+  restart) cmd_restart ;;
+  update)  cmd_update ;;
+  ssl)     cmd_ssl ;;
+  log)     cmd_log ;;
+  help|-h|--help) cmd_help ;;
+  "") main_menu ;;
+  *) echo -e "\n  ${RED}Unknown command: $1${R}\n  Run '${CYN}devculture help${R}' for usage.\n"; exit 1 ;;
+esac
