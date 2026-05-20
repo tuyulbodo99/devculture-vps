@@ -1,7 +1,9 @@
 #!/bin/bash
+# =================================================================
+#   DevCulture VPS — SSH Installer  v3.2.0
+#   @devculturebot | github.com/tuyulbodo99/devculture-vps
+# =================================================================
 set -euo pipefail
-#
-# ==================================================
 
 # initializing var
 export DEBIAN_FRONTEND=noninteractive
@@ -15,14 +17,13 @@ ver=$VERSION_ID
 country=ID
 state=INDONESIA
 locality=TANGERANG
-organization=devculture
-organizationalunit=devculture
+organization=DevCulture
+organizationalunit=DevCulture
 commonname=devculture.id
-email=devculturebot@gmail.com
+email=admin@devculture.id
 
 # simple password minimal
-# NOTE: Password policy managed by admin — /etc/pam.d/common-password
-chmod +x /etc/pam.d/common-password
+# Password policy managed by admin — see /etc/pam.d/common-password
 
 # go to root
 cd
@@ -93,7 +94,7 @@ sed -i 's/AcceptEnv/#AcceptEnv/g' /etc/ssh/sshd_config
 
 install_ssl(){
     if [ -f "/usr/bin/apt-get" ];then
-            isDebian=$(cat /etc/issue|grep Debian)
+            isDebian=`cat /etc/issue|grep Debian`
             if [ "$isDebian" != "" ];then
                     apt-get install -y nginx certbot
                     apt install -y nginx certbot
@@ -111,7 +112,7 @@ install_ssl(){
     systemctl stop nginx.service
 
     if [ -f "/usr/bin/apt-get" ];then
-            isDebian=$(cat /etc/issue|grep Debian)
+            isDebian=`cat /etc/issue|grep Debian`
             if [ "$isDebian" != "" ];then
                     echo "A" | certbot certonly --renew-by-default --register-unsafely-without-email --standalone -d $domain
                     sleep 3s
