@@ -1,39 +1,189 @@
 #!/bin/bash
-  # DevCulture VPS - All-in-One VPS Installer
-  # Supports: Ubuntu 16.04/18.04/20.04/22.04/24.04 | Debian 9/10/11/12
-  # Repo: https://github.com/tuyulbodo99/devculture-vps
+  # ============================================================
+  #  DevCulture VPS | github.com/tuyulbodo99/devculture-vps
+  #  Support: Ubuntu 16/18/20/22/24 | Debian 9/10/11/12
+  # ============================================================
+  set -euo pipefail
+
   RED='\e[1;31m';GREEN='\e[1;32m';YELLOW='\e[1;33m';CYAN='\e[1;36m';NC='\e[0m'
   green()  { echo -e "\033[32;1m${*}\033[0m"; }
   red()    { echo -e "\033[31;1m${*}\033[0m"; }
   yellow() { echo -e "\033[33;1m${*}\033[0m"; }
-  
+  cyan()   { echo -e "\033[36;1m${*}\033[0m"; }
+  bold()   { echo -e "\033[1m${*}\033[0m"; }
+
+  LOG_FILE="/var/log/devculture-install.log"
+  mkdir -p /var/log
+  exec > >(tee -a "$LOG_FILE") 2>&1
+  echo "=== DevCulture run: $(date) ==="
+
+  # ---- Trap errors ----
+  trap_error() {
+    local LINE=$1 CODE=$2
+    red ""
+    red "====================================================="
+    red "  ERROR pada baris $LINE (exit code: $CODE)"
+    red "  Log lengkap: $LOG_FILE"
+    red "====================================================="
+    red "  Solusi umum:"
+    red "  1. Pastikan koneksi internet stabil"
+    red "  2. Jalankan: apt-get update -y && apt-get upgrade -y"
+    red "  3. Coba jalankan script lagi"
+    red "====================================================="
+    exit $CODE
+  }
+  trap 'trap_error $LINENO $?' ERR
+
+  # ---- Helper functions ----
   detect_os() {
     if [[ -f /etc/os-release ]]; then
       source /etc/os-release
-      OS_ID="${ID}"; OS_VER="${VERSION_ID}"
-      OS_CODENAME="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null)}"
+      OS_ID="${ID}"; OS_VER="${VERSION_ID:-0}"
+      OS_CODENAME="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null || echo unknown)}"
     elif [[ -f /etc/debian_version ]]; then
       OS_ID="debian"; OS_VER=$(cat /etc/debian_version); OS_CODENAME="unknown"
     else
-      red "OS tidak didukung. Script ini hanya untuk Ubuntu/Debian."; exit 1
+      red "OS tidak didukung. Gunakan Ubuntu atau Debian."; exit 1
     fi
-    OS_MAJOR=$(echo $OS_VER | cut -d. -f1)
-    case "$OS_ID" in
-      ubuntu|debian) ;;
-      *) red "OS tidak didukung: $OS_ID"; exit 1 ;;
-    esac
+    OS_MAJOR=$(echo "$OS_VER" | cut -d. -f1 | tr -dc '0-9')
+    [[ "$OS_MAJOR" =~ ^[0-9]+$ ]] || OS_MAJOR=0
+    case "$OS_ID" in ubuntu|debian) ;; *) red "OS tidak didukung: $OS_ID"; exit 1 ;; esac
   }
-  check_root()  { [[ ${EUID} -ne 0 ]] && red "Harus dijalankan sebagai root!" && exit 1; }
-  check_virt()  { [[ "$(systemd-detect-virt 2>/dev/null)" == "openvz" ]] && red "OpenVZ tidak didukung." && exit 1; }
+
+  check_root() { [[ ${EUID} -eq 0 ]] || { red "Harus dijalankan sebagai root!"; exit 1; }; }
+
+  check_virt() {
+    local v=$(systemd-detect-virt 2>/dev/null || echo "none")
+    [[ "$v" == "openvz" ]] && red "OpenVZ tidak didukung." && exit 1
+    return 0
+  }
+
+  check_internet() {
+    yellow "Memeriksa koneksi internet..."
+    local HOSTS=("8.8.8.8" "1.1.1.1" "google.com")
+    for h in "${HOSTS[@]}"; do
+      if ping -c1 -W3 "$h" >/dev/null 2>&1 || curl -s --max-time 5 "https://$h" >/dev/null 2>&1; then
+        green "  [OK] Internet terhubung"
+        return 0
+      fi
+    done
+    red "  Tidak ada koneksi internet! Periksa jaringan VPS."
+    exit 1
+  }
+
+  check_disk() {
+    local MIN_MB=${1:-500}
+    local FREE_MB=$(df -m / | awk 'NR==2 {print $4}')
+    if [[ "$FREE_MB" -lt "$MIN_MB" ]]; then
+      red "Disk tidak cukup! Free: ${FREE_MB}MB, dibutuhkan: ${MIN_MB}MB"; exit 1
+    fi
+    green "  [OK] Disk: ${FREE_MB}MB tersedia"
+  }
+
+  check_ram() {
+    local MIN_MB=${1:-256}
+    local FREE_MB=$(free -m | awk '/^Mem:/{print $2}')
+    if [[ "$FREE_MB" -lt "$MIN_MB" ]]; then
+      yellow "  [WARN] RAM hanya ${FREE_MB}MB, disarankan minimal ${MIN_MB}MB"
+    else
+      green "  [OK] RAM: ${FREE_MB}MB"
+    fi
+  }
+
+  # ---- Wait for apt lock (anti-conflict) ----
+  wait_apt() {
+    local WAIT=0 MAX=120
+    while fuser /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock >/dev/null 2>&1; do
+      [[ $WAIT -eq 0 ]] && yellow "Menunggu proses apt lain selesai..."
+      sleep 3; WAIT=$((WAIT+3))
+      [[ $WAIT -ge $MAX ]] && { red "Timeout menunggu apt lock! Coba: rm -f /var/lib/dpkg/lock*"; exit 1; }
+    done
+  }
+
+  safe_apt() {
+    wait_apt
+    DEBIAN_FRONTEND=noninteractive apt-get "$@" \
+      -o Dpkg::Options::="--force-confdef" \
+      -o Dpkg::Options::="--force-confold" \
+      -o APT::Get::Assume-Yes=true \
+      -o APT::Get::allow-downgrades=true >/dev/null 2>&1 || true
+  }
+
+  # ---- Download with retry ----
+  safe_download() {
+    local URL="$1" OUT="$2" MAX=3 i=0
+    while [[ $i -lt $MAX ]]; do
+      wget -qO "$OUT" "$URL" 2>/dev/null && return 0
+      curl -fsSL "$URL" -o "$OUT" 2>/dev/null && return 0
+      i=$((i+1)); yellow "  Download retry $i/$MAX..."; sleep 3
+    done
+    red "  Gagal download: $URL"; return 1
+  }
+
+  # ---- Node.js installer (version-aware + nvm fallback) ----
+  install_nodejs() {
+    local NODE_VER=20
+    [[ "$OS_ID" == "ubuntu" && "$OS_MAJOR" -le 16 ]] && NODE_VER=16
+    [[ "$OS_ID" == "ubuntu" && "$OS_MAJOR" -eq 18 ]] && NODE_VER=18
+
+    yellow "  Menginstall Node.js $NODE_VER..."
+    safe_apt remove nodejs npm 2>/dev/null || true
+
+    # Method 1: NodeSource
+    if curl -fsSL "https://deb.nodesource.com/setup_${NODE_VER}.x" | bash - >/dev/null 2>&1; then
+      safe_apt install nodejs
+      command -v node &>/dev/null && { green "  Node.js $(node -v) via NodeSource"; return 0; }
+    fi
+
+    # Method 2: nvm fallback
+    yellow "  NodeSource gagal, mencoba nvm..."
+    export NVM_DIR="/root/.nvm"
+    safe_download "https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh" /tmp/nvm-install.sh
+    bash /tmp/nvm-install.sh >/dev/null 2>&1 || true
+    [[ -f "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
+    nvm install "$NODE_VER" >/dev/null 2>&1 && nvm use "$NODE_VER" >/dev/null 2>&1 || true
+    local NVM_NODE=$(nvm which "$NODE_VER" 2>/dev/null || echo "")
+    if [[ -n "$NVM_NODE" && -x "$NVM_NODE" ]]; then
+      ln -sf "$NVM_NODE" /usr/local/bin/node 2>/dev/null
+      ln -sf "$(dirname $NVM_NODE)/npm" /usr/local/bin/npm 2>/dev/null
+      green "  Node.js $(node -v) via nvm"
+      return 0
+    fi
+
+    # Method 3: distro package
+    yellow "  nvm gagal, mencoba apt..."
+    safe_apt install nodejs
+    command -v node &>/dev/null && { green "  Node.js $(node -v) via apt"; return 0; }
+    red "  Gagal menginstall Node.js!"; return 1
+  }
+
+  get_node_bin() {
+    local N=$(command -v node 2>/dev/null)
+    [[ -z "$N" ]] && source /root/.nvm/nvm.sh 2>/dev/null && N=$(command -v node 2>/dev/null)
+    [[ -z "$N" ]] && N="/usr/local/bin/node"
+    echo "$N"
+  }
   
   BASE="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main"
+
   check_root; detect_os; check_virt
+
   clear
   echo -e "${CYAN}============================================================${NC}"
-  echo -e "${CYAN}  DEVCULTURE VPS | $OS_ID $OS_VER ($OS_CODENAME)${NC}"
-  echo -e "${CYAN}  github.com/tuyulbodo99/devculture-vps${NC}"
+  echo -e "${CYAN}  DEVCULTURE VPS - Installer${NC}"
+  echo -e "${CYAN}  OS   : $OS_ID $OS_VER ($OS_CODENAME)${NC}"
+  echo -e "${CYAN}  Repo : github.com/tuyulbodo99/devculture-vps${NC}"
   echo -e "${CYAN}============================================================${NC}"
   echo ""
+
+  # Pre-flight checks
+  yellow ">>> Pre-flight checks..."
+  check_internet
+  check_disk 500
+  check_ram 256
+  green ">>> Semua checks OK. Lanjut install..."
+  echo ""
+
   green " [1] Install Full VPS (SSH + Xray + WebSocket + VPN)"
   green " [2] Install Dependencies Only"
   green " [3] Install SSH & WebSocket Only"
@@ -41,22 +191,50 @@
   green " [5] Install Telegram Bot"
   green " [6] Setup SSL Auto-Renewal"
   green " [7] Update Scripts"
+  green " [8] Uninstall DevCulture VPS"
   green " [0] Exit"
   echo ""
-  read -rp "$(yellow "Pilih menu: ")" CHOICE
-  run() { bash <(curl -fsSL "$BASE/$1") "$OS_ID" "$OS_VER"; }
+  read -rp "Pilih menu [0-8]: " CHOICE
+
+  run() {
+    local SCRIPT="$1"
+    yellow ">>> Menjalankan $SCRIPT..."
+    local TMP=$(mktemp /tmp/dc-XXXXX.sh)
+    if ! safe_download "$BASE/$SCRIPT" "$TMP"; then
+      red "Gagal download $SCRIPT"; rm -f "$TMP"; exit 1
+    fi
+    chmod +x "$TMP"
+    bash "$TMP" "$OS_ID" "$OS_VER" || { red "$SCRIPT gagal!"; rm -f "$TMP"; exit 1; }
+    rm -f "$TMP"
+  }
+
   case "$CHOICE" in
-    1) run dependencies.sh; run setup.sh; run bot/install-bot.sh
-       wget -qO /usr/local/bin/ssl-renew.sh "$BASE/ssl/ssl-renew.sh"
-       chmod +x /usr/local/bin/ssl-renew.sh && bash /usr/local/bin/ssl-renew.sh install ;;
-    2) run dependencies.sh ;;
-    3) run ssh/ssh-vpn.sh ;;
-    4) run xray/ins-xray.sh ;;
-    5) run bot/install-bot.sh ;;
-    6) wget -qO /usr/local/bin/ssl-renew.sh "$BASE/ssl/ssl-renew.sh"
-       chmod +x /usr/local/bin/ssl-renew.sh && bash /usr/local/bin/ssl-renew.sh install ;;
-    7) run update/update.sh ;;
+    1)
+      run "dependencies.sh"
+      run "setup.sh"
+      run "bot/install-bot.sh"
+      safe_download "$BASE/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh
+      chmod +x /usr/local/bin/ssl-renew.sh && bash /usr/local/bin/ssl-renew.sh install
+      ;;
+    2) run "dependencies.sh" ;;
+    3) run "ssh/ssh-vpn.sh" ;;
+    4) run "xray/ins-xray.sh" ;;
+    5) run "bot/install-bot.sh" ;;
+    6)
+      safe_download "$BASE/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh
+      chmod +x /usr/local/bin/ssl-renew.sh && bash /usr/local/bin/ssl-renew.sh install
+      ;;
+    7) run "update/update.sh" ;;
+    8)
+      safe_download "$BASE/uninstall.sh" /tmp/dc-uninstall.sh
+      chmod +x /tmp/dc-uninstall.sh && bash /tmp/dc-uninstall.sh
+      ;;
     0) exit 0 ;;
     *) red "Pilihan tidak valid."; exit 1 ;;
   esac
+
+  green ""
+  green "============================================================"
+  green "  SELESAI! Log: $LOG_FILE"
+  green "============================================================"
   
