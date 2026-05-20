@@ -119,6 +119,15 @@ preflight() {
   echo ""
 }
 
+
+install_devculture_cmd() {
+  info "Installing devculture command..."
+  local CMD_URL="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/devculture"
+  curl -fsSL "$CMD_URL" -o /usr/local/bin/devculture 2>/dev/null \
+    || wget -qO /usr/local/bin/devculture "$CMD_URL" 2>/dev/null
+  chmod +x /usr/local/bin/devculture
+  success "Command 'devculture' installed → run: devculture"
+}
 # ── Main loop ────────────────────────────────────────────────────
 while true; do
   show_banner
@@ -136,7 +145,15 @@ while true; do
       safe_dl "${BASE_URL}/ssl/ssl-renew.sh" /usr/local/bin/ssl-renew.sh
       chmod +x /usr/local/bin/ssl-renew.sh
       bash /usr/local/bin/ssl-renew.sh install
-      echo ""; success "Instalasi penuh selesai!"
+      install_devculture_cmd
+      echo ""; success "Instalasi penuh selesai! Jalankan: devculture"
+      echo ""
+      echo -e "  ${BBLUE}╔══════════════════════════════════════════════════════════╗${RESET}"
+      echo -e "  ${BBLUE}║${RESET}  ${BGREEN}✔  DevCulture VPS berhasil diinstall!${RESET}                    ${BBLUE}║${RESET}"
+      echo -e "  ${BBLUE}║${RESET}  ${BCYAN}→  Ketik 'devculture' untuk membuka panel${RESET}             ${BBLUE}║${RESET}"
+      echo -e "  ${BBLUE}║${RESET}  ${DIM}   @devculturebot | github.com/tuyulbodo99/devculture-vps${RESET}  ${BBLUE}║${RESET}"
+      echo -e "  ${BBLUE}╚══════════════════════════════════════════════════════════╝${RESET}"
+      echo ""
       ;;
     2) preflight; run_script "dependencies.sh" ;;
     3) preflight; run_script "ssh/ssh-vpn.sh" ;;
