@@ -19,16 +19,18 @@ fi
 
 setup_trap; check_root; detect_os; check_virt; get_sysinfo
 
+: "${VERSION:=2.0.0}"  # Default fallback
+
 show_banner() {
   clear
   echo -e "${BBLUE}"
   cat << 'LOGO'
-  ██████╗ ███████╗██╗   ██╗ ██████╗██╗   ██╗██╗  ████████╗██╗   ██╗██████╗ ███████╗
-  ██╔══██╗██╔════╝██║   ██║██╔════╝██║   ██║██║  ╚══██╔══╝██║   ██║██╔══██╗██╔════╝
+  ██████╗ ███████╗██╗   ██╗ ██████╗██╗   ██╗██╗  ████████╗██╗   ██╗██████╗ ██████╗
+  ██╔══██╗██╔════╝██║   ██║██╔════╝██║   ██║██║  ╚══██╔══╝██║   ██║██╔══██╗██╔══██╗
   ██║  ██║█████╗  ██║   ██║██║     ██║   ██║██║     ██║   ██║   ██║██████╔╝█████╗
   ██║  ██║██╔══╝  ╚██╗ ██╔╝██║     ██║   ██║██║     ██║   ██║   ██║██╔══██╗██╔══╝
-  ██████╔╝███████╗ ╚████╔╝ ╚██████╗╚██████╔╝███████╗██║   ╚██████╔╝██║  ██║███████╗
-  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
+  ██████╔╝███████╗ ╚████╔╝ ╚██████╗╚██████╔╝███████╗██║   ╚██████╔╝██║  ██║██║
+  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝
 LOGO
   echo -e "${RESET}"
   echo -e "  ${BCYAN}${BOLD}              Premium VPS Management Suite  v${VERSION}${RESET}"
@@ -40,14 +42,14 @@ show_sysinfo() {
   echo -e "${BBLUE}${LINE_TOP}${RESET}"
   box_line "${BOLD}${BYELLOW}  ◈  SYSTEM INFORMATION${RESET}"
   echo -e "${BBLUE}${LINE_SEP}${RESET}"
-  box_line "  ${BCYAN}IP Address ${RESET}: ${BWHITE}${SYS_IP}${RESET}"
-  box_line "  ${BCYAN}OS         ${RESET}: ${BWHITE}${OS_ID^} ${OS_VER} (${OS_CODENAME})${RESET}"
-  box_line "  ${BCYAN}Kernel     ${RESET}: ${BWHITE}${SYS_KERNEL}${RESET}"
-  box_line "  ${BCYAN}CPU Cores  ${RESET}: ${BWHITE}${SYS_CPU} core(s)  |  Load: ${SYS_LOAD}${RESET}"
-  box_line "  ${BCYAN}RAM        ${RESET}: ${BWHITE}${SYS_RAM}${RESET}"
-  box_line "  ${BCYAN}Disk       ${RESET}: ${BWHITE}${SYS_DISK}${RESET}"
-  box_line "  ${BCYAN}Uptime     ${RESET}: ${BWHITE}${SYS_UPTIME}${RESET}"
-  box_line "  ${BCYAN}Node.js    ${RESET}: ${BWHITE}${NODE_VER}${RESET}"
+  box_line "  ${BCYAN}IP Address${RESET}: ${BWHITE}${SYS_IP}${RESET}"
+  box_line "  ${BCYAN}OS${RESET}: ${BWHITE}${OS_ID^} ${OS_VER} (${OS_CODENAME})${RESET}"
+  box_line "  ${BCYAN}Kernel${RESET}: ${BWHITE}${SYS_KERNEL}${RESET}"
+  box_line "  ${BCYAN}CPU Cores${RESET}: ${BWHITE}${SYS_CPU}${RESET} core(s) | Load: ${BWHITE}${SYS_LOAD}${RESET}"
+  box_line "  ${BCYAN}RAM${RESET}: ${BWHITE}${SYS_RAM}${RESET}"
+  box_line "  ${BCYAN}Disk${RESET}: ${BWHITE}${SYS_DISK}${RESET}"
+  box_line "  ${BCYAN}Uptime${RESET}: ${BWHITE}${SYS_UPTIME}${RESET}"
+  box_line "  ${BCYAN}Node.js${RESET}: ${BWHITE}${NODE_VER}${RESET}"
   echo -e "${BBLUE}${LINE_BOT}${RESET}"
   echo ""
 }
@@ -85,9 +87,9 @@ show_status() {
   for S in "${SVCS[@]}"; do
     local ST; ST=$(systemctl is-active "$S" 2>/dev/null || echo "inactive")
     if [[ "$ST" == "active" ]]; then
-      box_line "  ${BGREEN}●${RESET}  ${BWHITE}%-24s${RESET}  ${BGREEN}[RUNNING]${RESET}" "$S"
+      printf "║ ${BGREEN}●${RESET}  ${BWHITE}%-20s${RESET}  ${BGREEN}[RUNNING]${RESET}${DIM}%-11s${RESET}║\n" "$S" ""
     else
-      box_line "  ${BRED}○${RESET}  ${DIM}%-24s  [${ST}]${RESET}" "$S"
+      printf "║ ${BRED}○${RESET}  ${DIM}%-20s  [${ST}]${DIM}%-11s${RESET}║\n" "$S" ""
     fi
   done
   echo -e "${BBLUE}${LINE_SEP}${RESET}"
@@ -148,11 +150,11 @@ while true; do
       install_devculture_cmd
       echo ""; success "Instalasi penuh selesai! Jalankan: devculture"
       echo ""
-      echo -e "  ${BBLUE}╔══════════════════════════════════════════════════════════╗${RESET}"
+      echo -e "  ${BBLUE}╔════════════════════════════════════════════════════════╗${RESET}"
       echo -e "  ${BBLUE}║${RESET}  ${BGREEN}✔  DevCulture VPS berhasil diinstall!${RESET}                    ${BBLUE}║${RESET}"
       echo -e "  ${BBLUE}║${RESET}  ${BCYAN}→  Ketik 'devculture' untuk membuka panel${RESET}             ${BBLUE}║${RESET}"
       echo -e "  ${BBLUE}║${RESET}  ${DIM}   @devculturebot | github.com/tuyulbodo99/devculture-vps${RESET}  ${BBLUE}║${RESET}"
-      echo -e "  ${BBLUE}╚══════════════════════════════════════════════════════════╝${RESET}"
+      echo -e "  ${BBLUE}╚════════════════════════════════════════════════════════╝${RESET}"
       echo ""
       ;;
     2) preflight; run_script "dependencies.sh" ;;
