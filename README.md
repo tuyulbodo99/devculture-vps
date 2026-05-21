@@ -13,6 +13,10 @@
 ![Shell](https://img.shields.io/badge/Bash-5.x-7c3aed?style=for-the-badge&logo=gnubash&logoColor=white&labelColor=0d0d0d)
 ![TCP+UDP](https://img.shields.io/badge/Protocol-TCP%20%2B%20UDP-a855f7?style=for-the-badge&labelColor=0d0d0d)
 
+<br/>
+
+<img src="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/assets/online.svg" alt="NGINX ONLINE" />
+
 </div>
 
 ---
@@ -130,15 +134,21 @@ UDPGW Port   : 7300 (UDP)
 - Backup & restore data
 - Xray VLESS / VMess / Trojan
 - Telegram bot notifikasi
-- Sistem ijin/lisensi berbasis GitHub
+- Health check otomatis semua service
 
-
+---
 
 ## 🛠️ Perintah Utama
 
 ```bash
-# Install
+# Install (satu perintah)
 bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)
+
+# Cek kesehatan semua service setelah install
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/healthcheck.sh)
+
+# Update script
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/update/update.sh)
 
 # SSH langsung semua port
 ssh user@host -p 22    # OpenSSH
@@ -146,22 +156,18 @@ ssh user@host -p 109   # Dropbear
 ssh user@host -p 80    # WebSocket HTTP
 ssh user@host -p 443   # WebSocket SSL
 ssh user@host -p 777   # Stunnel
-
-# BadVPN UDPGW (aktifkan UDP di VPS)
-badvpn-udpgw --listen-addr 127.0.0.1:7300
 ```
 
 ---
 
 ## 🌐 Ekosistem DevCulture
 
-| Repo | Fungsi | Install |
-|------|--------|---------|
-| 🟣 [devculture-vps](https://github.com/tuyulbodo99/devculture-vps) | Core Panel SSH + WebSocket | `install.sh` |
-| 🟣 [hokagescript](https://github.com/tuyulbodo99/hokagescript) | Menu Layanan & Services | `setup.sh` |
-| 🟣 [vpnscript](https://github.com/tuyulbodo99/vpnscript) | Full VPN (OpenVPN+WG+SlowDNS) | `premi.sh` |
-| 🟣 [vps-script](https://github.com/tuyulbodo99/vps-script) | SSH Tunnel Setup | `setup.sh` |
-| 🟣 [ijin](https://github.com/tuyulbodo99/ijin) | Sistem Lisensi & Perizinan | `check-ijin.sh` |
+| Repo | Fungsi | One-Click Install |
+|------|--------|-------------------|
+| 🟣 [devculture-vps](https://github.com/tuyulbodo99/devculture-vps) | Core Panel SSH + WebSocket | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)` |
+| 🟣 [hokagescript](https://github.com/tuyulbodo99/hokagescript) | Menu Layanan & Services | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/hokagescript/main/setup.sh)` |
+| 🟣 [vpnscript](https://github.com/tuyulbodo99/vpnscript) | Full VPN (OpenVPN+WG+SlowDNS) | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/vpnscript/main/premi.sh)` |
+| 🟣 [vps-script](https://github.com/tuyulbodo99/vps-script) | SSH Tunnel Setup | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/vps-script/main/install)` |
 
 ---
 
