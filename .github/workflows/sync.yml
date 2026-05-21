@@ -1,0 +1,89 @@
+name: Sync Scripts to Other Repos
+
+# =================================================================
+#   DevCulture VPS -- Auto Sync Workflow
+#   Otomatis sinkronisasi script ke repo VPS lainnya setiap push.
+#
+#   SETUP (satu kali saja):
+#   1. Buat Personal Access Token (PAT) di:
+#      https://github.com/settings/tokens/new
+#      Centang scope: repo (full control of private repositories)
+#
+#   2. Simpan token sebagai repo secret dengan nama SYNC_TOKEN:
+#      https://github.com/tuyulbodo99/devculture-vps/settings/secrets/actions/new
+#      Name  : SYNC_TOKEN
+#      Value : ghp_xxx... (token PAT yang baru dibuat)
+# =================================================================
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'setup.sh'
+      - 'ssh/ssh-vpn.sh'
+      - 'xray/ins-xray.sh'
+      - 'update/update.sh'
+      - 'update/update-devculture.sh'
+      - 'update/menu.sh'
+      - 'websocket/insshws.sh'
+      - 'lib/utils.sh'
+      - 'sync.sh'
+      - '.github/workflows/sync.yml'
+
+  # Jalankan manual kapanpun dari tab Actions GitHub
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Alasan sync manual (opsional)'
+        required: false
+        default: 'Manual trigger'
+
+jobs:
+  sync:
+    name: Sync to hokagescript
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout devculture-vps
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Cek SYNC_TOKEN tersedia
+        run: |
+          if [[ -z "${{ secrets.SYNC_TOKEN }}" ]]; then
+            echo "::error::Secret SYNC_TOKEN belum diset!"
+            echo "::error::Langkah setup:"
+            echo "::error::1. Buat PAT di https://github.com/settings/tokens/new (scope: repo)"
+            echo "::error::2. Tambahkan ke https://github.com/tuyulbodo99/devculture-vps/settings/secrets/actions/new"
+            echo "::error::   Name: SYNC_TOKEN"
+            exit 1
+          fi
+          echo "SYNC_TOKEN tersedia"
+
+      - name: Tampilkan file yang berubah
+        if: github.event_name == 'push'
+        run: |
+          echo "=== File yang berubah ==="
+          git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "(tidak dapat mendeteksi)"
+
+      - name: Jalankan sync.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          chmod +x ./sync.sh
+          bash ./sync.sh
+
+      - name: Ringkasan
+        if: always()
+        run: |
+          echo ""
+          echo "==========================="
+          echo "Sync selesai"
+          echo "Sumber  : tuyulbodo99/devculture-vps"
+          echo "Tujuan  : tuyulbodo99/hokagescript"
+          echo "Trigger : ${{ github.event_name }}"
+          echo "Commit  : ${{ github.sha }}"
+          echo "Waktu   : $(date -u '+%Y-%m-%d %H:%M UTC')"
+          echo "==========================="
