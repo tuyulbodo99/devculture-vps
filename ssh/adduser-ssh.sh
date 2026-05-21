@@ -1,14 +1,17 @@
 #!/bin/bash
 # =================================================================
-#   DevCulture VPS — SSH User Manager v1.0.0
-#   Buat & kelola akun SSH + WebSocket lengkap
+#   DevCulture VPS — SSH User Manager v2.0.0
+#   Multi-Port | UDP | WebSocket | Stunnel | SlowDNS
 #   github.com/tuyulbodo99 | @devculturebot
 # =================================================================
 
 RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"
 BCYAN="\033[1;36m"; BGREEN="\033[1;32m"; BYELLOW="\033[1;33m"
 BRED="\033[1;31m"; BPURPLE="\033[1;35m"; BWHITE="\033[1;37m"
-BGRAY="\033[1;90m"
+BGRAY="\033[1;90m"; BBLUE="\033[1;34m"
+
+LINE="═══════════════════════════════════════════════════════════════"
+LINE2="───────────────────────────────────────────────────────────────"
 
 # ── Baca konfigurasi dari log-install.txt ─────────────────────────
 read_config() {
@@ -20,347 +23,360 @@ read_config() {
   PORT_SSHWS=$(grep -w "SSH Websocket" "$LOG" 2>/dev/null | cut -d: -f2 | awk '{print $1}' || echo "80")
   PORT_SSHWSSL=$(grep -w "SSH SSL Websocket" "$LOG" 2>/dev/null | cut -d: -f2 | awk '{print $1}' || echo "443")
   PORT_STUNNEL=$(grep -w "Stunnel" "$LOG" 2>/dev/null | grep -oP '\d+' | head -1 || echo "777")
+  PORT_UDPGW=$(grep -w "UDPGW" "$LOG" 2>/dev/null | grep -oP '\d+' | head -1 || echo "7300")
+  PORT_SLOWDNS=$(grep -w "SlowDNS" "$LOG" 2>/dev/null | grep -oP '\d+' | head -1 || echo "5300")
+  PORT_OVPN_TCP=$(grep -w "OpenVPN TCP" "$LOG" 2>/dev/null | grep -oP '\d+' | head -1 || echo "1194")
+  PORT_OVPN_UDP=$(grep -w "OpenVPN UDP" "$LOG" 2>/dev/null | grep -oP '\d+' | head -1 || echo "2200")
   MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null \
       || curl -sS --max-time 5 ifconfig.me 2>/dev/null \
       || hostname -I | awk '{print $1}')
-  # Gunakan IP jika tidak ada domain
   HOST="${DOMAIN:-$MYIP}"
 }
 
-# ── Validasi input ────────────────────────────────────────────────
 validate_user() {
-  local user="$1"
-  if [[ -z "$user" ]]; then echo "Username tidak boleh kosong!"; return 1; fi
-  if [[ ${#user} -lt 3 ]]; then echo "Username minimal 3 karakter!"; return 1; fi
-  if ! [[ "$user" =~ ^[a-zA-Z0-9_-]+$ ]]; then echo "Username hanya boleh huruf, angka, _, -"; return 1; fi
-  if id "$user" &>/dev/null; then echo "Username '$user' sudah ada!"; return 1; fi
+  local u="$1"
+  [[ -z "$u" ]] && { echo "Username kosong!"; return 1; }
+  [[ ${#u} -lt 3 ]] && { echo "Min 3 karakter!"; return 1; }
+  [[ ! "$u" =~ ^[a-zA-Z0-9_-]+$ ]] && { echo "Hanya huruf, angka, _, -"; return 1; }
+  id "$u" &>/dev/null && { echo "Username '$u' sudah ada!"; return 1; }
   return 0
 }
+validate_pass() { [[ -z "$1" || ${#1} -lt 4 ]] && { echo "Password min 4 karakter!"; return 1; }; return 0; }
+validate_exp()  { [[ ! "$1" =~ ^[0-9]+$ || "$1" -lt 1 || "$1" -gt 365 ]] && { echo "Hari 1-365!"; return 1; }; return 0; }
 
-validate_pass() {
-  local pass="$1"
-  if [[ -z "$pass" ]]; then echo "Password tidak boleh kosong!"; return 1; fi
-  if [[ ${#pass} -lt 4 ]]; then echo "Password minimal 4 karakter!"; return 1; fi
-  return 0
+calc_expire() { date -d "+${1} days" '+%Y-%m-%d'; }
+fmt_days()    {
+  local d1; d1=$(date -d "$1" +%s 2>/dev/null) || { echo "$1"; return; }
+  local d2; d2=$(date +%s)
+  echo "$1 ($(( (d1-d2)/86400 )) hari lagi)"
 }
 
-validate_exp() {
-  local days="$1"
-  if ! [[ "$days" =~ ^[0-9]+$ ]] || [[ "$days" -lt 1 ]] || [[ "$days" -gt 365 ]]; then
-    echo "Masa aktif harus antara 1-365 hari!"; return 1
-  fi
-  return 0
-}
-
-# ── Hitung tanggal expire ─────────────────────────────────────────
-calc_expire() {
-  local days="$1"
-  date -d "+${days} days" '+%Y-%m-%d'
-}
-
-# ── Buat akun SSH ─────────────────────────────────────────────────
 create_ssh_user() {
-  local username="$1" password="$2" exp_date="$3"
-
-  # Buat user system tanpa login shell interaktif (bisa SSH tapi tidak bisa exec)
-  useradd -e "$exp_date" -s /bin/false -M "$username" 2>/dev/null \
-    || useradd -e "$exp_date" -s /usr/sbin/nologin -M "$username"
-
-  # Set password
-  echo "$username:$password" | chpasswd
-
-  # Batas max login bersamaan = 2 (anti multi-login)
-  if ! grep -q "^$username" /etc/security/limits.conf 2>/dev/null; then
-    echo "$username hard maxlogins 2" >> /etc/security/limits.conf
-  fi
+  useradd -e "$3" -s /bin/false -M "$1" 2>/dev/null \
+    || useradd -e "$3" -s /usr/sbin/nologin -M "$1"
+  echo "$1:$2" | chpasswd
+  grep -q "^$1" /etc/security/limits.conf 2>/dev/null \
+    || echo "$1 hard maxlogins 2" >> /etc/security/limits.conf
 }
 
-# ── Generate payload WebSocket ────────────────────────────────────
-gen_ws_payload() {
-  echo "GET wss://bug.com/ HTTP/1.1[crlf]Host: bug.com[crlf]Upgrade: websocket[crlf][crlf]"
-}
-
-# ── Format waktu dari detik ───────────────────────────────────────
-fmt_exp() {
-  local exp_date="$1"
-  local today; today=$(date '+%Y-%m-%d')
-  local diff; diff=$(( ( $(date -d "$exp_date" +%s) - $(date -d "$today" +%s) ) / 86400 ))
-  echo "${exp_date} (${diff} hari)"
-}
-
-# ── Tampilkan hasil akun SSH + WebSocket lengkap ──────────────────
+# ════════════════════════════════════════════════════════════════
+#   TAMPILKAN INFO AKUN LENGKAP
+# ════════════════════════════════════════════════════════════════
 show_account() {
-  local username="$1" password="$2" exp_date="$3"
-  local timestamp; timestamp=$(date '+%d %B %Y %H:%M:%S WIB')
+  local U="$1" P="$2" EXP="$3"
+  local TS; TS=$(date '+%d %B %Y %H:%M:%S WIB')
 
   clear
   echo ""
-  echo -e "${BPURPLE}  ╔══════════════════════════════════════════════════════════════╗${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}                                                              ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}   ${BOLD}${BWHITE}██████╗  ██████╗    ██╗   ██╗██████╗ ███████╗${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}   ${BOLD}${BWHITE}██╔══██╗██╔════╝    ██║   ██║██╔══██╗██╔════╝${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}   ${BOLD}${BWHITE}██║  ██║██║         ╚██╗ ██╔╝██████╔╝███████╗${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}   ${BOLD}${BWHITE}██║  ██║██║          ╚████╔╝ ██╔═══╝ ╚════██║${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}   ${BOLD}${BWHITE}██████╔╝╚██████╗      ╚██╔╝  ██║     ███████║${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}   ${DIM}${BGRAY}╚═════╝  ╚═════╝       ╚═╝   ╚═╝     ╚══════╝${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ║${RESET}                 ${DIM}github.com/tuyulbodo99 • @devculturebot${RESET}    ${BPURPLE}║${RESET}"
-  echo -e "${BPURPLE}  ╚══════════════════════════════════════════════════════════════╝${RESET}"
+  # ── Header Banner ──────────────────────────────────────────────
+  echo -e "${BPURPLE}  ╔${LINE}╗${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}                                                               ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}  ${BOLD}${BWHITE}  ██████╗  ██████╗    ██╗   ██╗██████╗ ███████╗${RESET}        ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}  ${BOLD}${BWHITE}  ██╔══██╗██╔════╝    ██║   ██║██╔══██╗██╔════╝${RESET}        ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}  ${BOLD}${BWHITE}  ██║  ██║██║         ╚██╗ ██╔╝██████╔╝███████╗${RESET}        ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}  ${BOLD}${BWHITE}  ██║  ██║██║          ╚████╔╝ ██╔═══╝ ╚════██║${RESET}        ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}  ${BOLD}${BWHITE}  ██████╔╝╚██████╗      ╚██╔╝  ██║     ███████║${RESET}        ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}  ${DIM}${BGRAY}  ╚═════╝  ╚═════╝       ╚═╝   ╚═╝     ╚══════╝${RESET}        ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ║${RESET}              ${DIM}github.com/tuyulbodo99 • @devculturebot${RESET}      ${BPURPLE}║${RESET}"
+  echo -e "${BPURPLE}  ╚${LINE}╝${RESET}"
   echo ""
 
-  # ── Info Akun ──────────────────────────────────────────────────
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BYELLOW}◈  INFORMASI AKUN SSH${RESET}                                     ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├─────────────────────────────────────────────────────────────┤${RESET}"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Username" "$username"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Password" "$password"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Masa Aktif" "$(fmt_exp "$exp_date")"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Dibuat" "$timestamp"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Host / IP" "$HOST"
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────────────┘${RESET}"
+  # ── Informasi Akun ─────────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  INFORMASI AKUN SSH${RESET}                                          ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠${LINE}╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Username"   "$U"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Password"   "$P"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Masa Aktif" "$(fmt_days "$EXP")"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Dibuat"     "$TS"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Host / IP"  "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Format Akun" "${U}@${P}:${HOST}"
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
   echo ""
 
-  # ── Detail Koneksi ─────────────────────────────────────────────
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BYELLOW}◈  DETAIL KONEKSI${RESET}                                         ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├──────────────────────────────────┬──────────────────────────┤${RESET}"
-  printf "  ${BPURPLE}│${RESET}  ${BGRAY}%-30s${RESET}  ${BPURPLE}│${RESET}  %-24s${RESET}  ${BPURPLE}│${RESET}\n" "Protokol" "Port"
-  echo -e "  ${BPURPLE}├──────────────────────────────────┼──────────────────────────┤${RESET}"
-  printf "  ${BPURPLE}│${RESET}  ${BGREEN}%-30s${RESET}  ${BPURPLE}│${RESET}  ${BWHITE}%-24s${RESET}  ${BPURPLE}│${RESET}\n" "OpenSSH" "$PORT_SSH"
-  printf "  ${BPURPLE}│${RESET}  ${BGREEN}%-30s${RESET}  ${BPURPLE}│${RESET}  ${BWHITE}%-24s${RESET}  ${BPURPLE}│${RESET}\n" "Dropbear" "${PORT_DROPBEAR}, ${PORT_DROPBEAR2}"
-  printf "  ${BPURPLE}│${RESET}  ${BGREEN}%-30s${RESET}  ${BPURPLE}│${RESET}  ${BWHITE}%-24s${RESET}  ${BPURPLE}│${RESET}\n" "SSH WebSocket" "$PORT_SSHWS"
-  printf "  ${BPURPLE}│${RESET}  ${BGREEN}%-30s${RESET}  ${BPURPLE}│${RESET}  ${BWHITE}%-24s${RESET}  ${BPURPLE}│${RESET}\n" "SSH SSL WebSocket (HTTPS)" "$PORT_SSHWSSL"
-  printf "  ${BPURPLE}│${RESET}  ${BGREEN}%-30s${RESET}  ${BPURPLE}│${RESET}  ${BWHITE}%-24s${RESET}  ${BPURPLE}│${RESET}\n" "Stunnel (SSL Tunnel)" "$PORT_STUNNEL"
-  echo -e "  ${BPURPLE}└──────────────────────────────────┴──────────────────────────┘${RESET}"
+  # ── Multi-Port TCP ─────────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  KONEKSI TCP — MULTI PORT${RESET}                                    ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠══════════════════════╦═══════╦═══════════════════════════════╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BOLD}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BOLD}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BOLD}%-31s${RESET}${BPURPLE}║${RESET}\n" "Protokol" "Port" "Connection String"
+  echo -e "  ${BPURPLE}╠══════════════════════╬═══════╬═══════════════════════════════╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BGREEN}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "OpenSSH" "$PORT_SSH" "${U}@${P}:${HOST}:${PORT_SSH}"
+  printf "  ${BPURPLE}║${RESET}  ${BGREEN}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "Dropbear" "$PORT_DROPBEAR" "${U}@${P}:${HOST}:${PORT_DROPBEAR}"
+  printf "  ${BPURPLE}║${RESET}  ${BGREEN}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "Dropbear Alt" "$PORT_DROPBEAR2" "${U}@${P}:${HOST}:${PORT_DROPBEAR2}"
+  printf "  ${BPURPLE}║${RESET}  ${BGREEN}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "SSH WebSocket" "$PORT_SSHWS" "${U}@${P}:${HOST}:${PORT_SSHWS}"
+  printf "  ${BPURPLE}║${RESET}  ${BGREEN}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "SSH SSL/WSS" "$PORT_SSHWSSL" "${U}@${P}:${HOST}:${PORT_SSHWSSL}"
+  printf "  ${BPURPLE}║${RESET}  ${BGREEN}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "Stunnel (SSL)" "$PORT_STUNNEL" "${U}@${P}:${HOST}:${PORT_STUNNEL}"
+  echo -e "  ${BPURPLE}╚══════════════════════╩═══════╩═══════════════════════════════╝${RESET}"
   echo ""
 
-  # ── Config WebSocket ───────────────────────────────────────────
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BYELLOW}◈  KONFIGURASI HTTP CUSTOM (WebSocket Payload)${RESET}            ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├─────────────────────────────────────────────────────────────┤${RESET}"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Server Host" "$HOST"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Server Port" "$PORT_SSHWS (HTTP/WS)"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Port SSL" "$PORT_SSHWSSL (HTTPS/WSS)"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Username" "$username"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Password" "$password"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Proxy Host" "bug.com"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Inject Method" "HTTP Custom"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "SNI / Bug Host" "bug.com"
-  echo -e "  ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BGRAY}Payload (HTTP Injector / HTTP Custom):${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BWHITE}  GET wss://bug.com/ HTTP/1.1[crlf]${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BWHITE}  Host: bug.com[crlf]${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BWHITE}  Upgrade: websocket[crlf][crlf]${RESET}"
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────────────┘${RESET}"
+  # ── Multi-Port UDP ─────────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  KONEKSI UDP — MULTI PORT${RESET}                                    ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠══════════════════════╦═══════╦═══════════════════════════════╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BOLD}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BOLD}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BOLD}%-31s${RESET}${BPURPLE}║${RESET}\n" "Protokol" "Port" "Connection String"
+  echo -e "  ${BPURPLE}╠══════════════════════╬═══════╬═══════════════════════════════╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BBLUE}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "UDPGW (BadVPN)" "$PORT_UDPGW" "${U}@${P}:${HOST}:${PORT_UDPGW}"
+  printf "  ${BPURPLE}║${RESET}  ${BBLUE}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "SlowDNS UDP" "$PORT_SLOWDNS" "${U}@${P}:${HOST}:${PORT_SLOWDNS}"
+  printf "  ${BPURPLE}║${RESET}  ${BBLUE}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "OpenVPN UDP" "$PORT_OVPN_UDP" "${U}@${P}:${HOST}:${PORT_OVPN_UDP}"
+  printf "  ${BPURPLE}║${RESET}  ${BBLUE}%-20s${RESET}  ${BPURPLE}║${RESET}  ${BWHITE}%-5s${RESET}  ${BPURPLE}║${RESET}  ${BYELLOW}%-31s${RESET}${BPURPLE}║${RESET}\n" \
+    "OpenVPN TCP" "$PORT_OVPN_TCP" "${U}@${P}:${HOST}:${PORT_OVPN_TCP}"
+  echo -e "  ${BPURPLE}╚══════════════════════╩═══════╩═══════════════════════════════╝${RESET}"
   echo ""
 
-  # ── Format Config HTTP Injector ───────────────────────────────
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BYELLOW}◈  CONFIG HTTP INJECTOR / NETSPARK / NPAY${RESET}                 ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├─────────────────────────────────────────────────────────────┤${RESET}"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Proxy Type" "SSH"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "SSH Host" "$HOST"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "SSH Port" "$PORT_SSH"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "SSH User" "$username"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "SSH Pass" "$password"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Remote Proxy" "127.0.0.1:8080"
-  printf "  ${BPURPLE}│${RESET}  ${BCYAN}%-18s${RESET}: ${BWHITE}%s${RESET}\n" "Listen Port" "8989"
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────────────┘${RESET}"
+  # ── Payload WebSocket ──────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  HTTP CUSTOM / WEBSOCKET PAYLOAD${RESET}                             ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠${LINE}╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Host"      "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Port HTTP/WS"  "$PORT_SSHWS"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Port HTTPS/WSS" "$PORT_SSHWSSL"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Bug / SNI"     "bug.com"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Inject"        "HTTP Custom / GET"
+  echo -e "  ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${DIM}Payload 1 (Standard):${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BWHITE}  GET wss://bug.com/ HTTP/1.1[crlf]Host: bug.com[crlf]Upgrade: websocket[crlf][crlf]${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${DIM}Payload 2 (CONNECT):${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BWHITE}  CONNECT ${HOST}:${PORT_SSH} HTTP/1.1[crlf]Host: bug.com[crlf][crlf]${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${DIM}Payload 3 (Upgrade Header):${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BWHITE}  GET / HTTP/1.1[crlf]Host: bug.com[crlf]Connection: Upgrade[crlf]Upgrade: websocket[crlf][crlf]${RESET}"
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
   echo ""
 
-  # ── SSH Command ───────────────────────────────────────────────
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BYELLOW}◈  PERINTAH SSH (Terminal)${RESET}                                ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├─────────────────────────────────────────────────────────────┤${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${DIM}# Koneksi langsung:${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BWHITE}  ssh ${username}@${HOST} -p ${PORT_SSH}${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${DIM}# Via WebSocket tunnel (HTTP):${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BWHITE}  ssh ${username}@${HOST} -p ${PORT_SSHWS}${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${DIM}# Via WebSocket SSL (HTTPS):${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BWHITE}  ssh ${username}@${HOST} -p ${PORT_SSHWSSL}${RESET}"
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────────────┘${RESET}"
+  # ── Config HTTP Injector ───────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  HTTP INJECTOR / NETSPARK / NPAY (SSH Mode)${RESET}                  ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠${LINE}╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Proxy Type"   "SSH"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Host"     "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Port"     "$PORT_SSH / $PORT_SSHWS / $PORT_SSHWSSL"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH User"     "$U"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Password" "$P"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Remote DNS"   "8.8.8.8"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Remote Proxy" "127.0.0.1:8080"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Listen Port"  "8989"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "UDPGW"        "${HOST}:${PORT_UDPGW}"
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
   echo ""
 
-  # ── Status services ───────────────────────────────────────────
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BYELLOW}◈  STATUS LAYANAN${RESET}                                         ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├─────────────────────────────────────────────────────────────┤${RESET}"
-  local services=("ssh" "dropbear" "nginx" "stunnel4" "ws-openssh" "ws-dropbear")
-  for svc in "${services[@]}"; do
+  # ── Config KPN Tunnel / OpenTunnel ────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  KPN TUNNEL / OPENTUNNEL / VNPK${RESET}                              ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠${LINE}╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Mode"         "SSH + UDP"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Server"   "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Port"     "$PORT_SSH"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH User"     "$U"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Password" "$P"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "UDPGW Host"   "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "UDPGW Port"   "$PORT_UDPGW"
+  echo -e "  ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${DIM}Connection String (copy-paste):${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BWHITE}  ${U}@${P}:${HOST}:${PORT_SSH}:udp:${PORT_UDPGW}${RESET}"
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
+  echo ""
+
+  # ── SlowDNS Config ─────────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  SLOWDNS / DNS TUNNEL CONFIG${RESET}                                 ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠${LINE}╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Host"     "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "SSH Port"     "$PORT_SSH"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "DNS Server"   "$HOST"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "DNS Port"     "$PORT_SLOWDNS (UDP)"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Nameserver"   "ns1.devculture.id"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Username"     "$U"
+  printf "  ${BPURPLE}║${RESET}  ${BCYAN}%-20s${RESET}: ${BWHITE}%-42s${RESET}${BPURPLE}║${RESET}\n" "Password"     "$P"
+  echo -e "  ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${DIM}String (SlowDNS format):${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BWHITE}  ${U}@${P}:${HOST}:${PORT_SLOWDNS}:dns:ns1.devculture.id${RESET}"
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
+  echo ""
+
+  # ── SSH Terminal Commands ──────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  PERINTAH SSH TERMINAL — SEMUA PORT${RESET}                          ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠${LINE}╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# OpenSSH (default):"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "ssh ${U}@${HOST} -p ${PORT_SSH}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# Dropbear port 1:"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "ssh ${U}@${HOST} -p ${PORT_DROPBEAR}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# Dropbear port 2:"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "ssh ${U}@${HOST} -p ${PORT_DROPBEAR2}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# WebSocket HTTP:"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "ssh ${U}@${HOST} -p ${PORT_SSHWS}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# WebSocket HTTPS/SSL:"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "ssh ${U}@${HOST} -p ${PORT_SSHWSSL}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# Via Stunnel SSL:"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "ssh ${U}@${HOST} -p ${PORT_STUNNEL}"
+  echo -e "  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}%-63s${RESET}${BPURPLE}║${RESET}\n" "# BadVPN UDPGW (di sisi VPS):"
+  printf "  ${BPURPLE}║${RESET}  ${BWHITE}  %-61s${RESET}${BPURPLE}║${RESET}\n" "badvpn-udpgw --listen-addr 127.0.0.1:${PORT_UDPGW}"
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
+  echo ""
+
+  # ── Status Services ────────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BYELLOW}◈  STATUS LAYANAN${RESET}                                              ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╠════════════════════╦══════════╦════════════════════════════════╣${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${BOLD}%-18s${RESET}  ${BPURPLE}║${RESET}  ${BOLD}%-8s${RESET}  ${BPURPLE}║${RESET}  ${BOLD}%-30s${RESET}  ${BPURPLE}║${RESET}\n" "Service" "Status" "Port"
+  echo -e "  ${BPURPLE}╠════════════════════╬══════════╬════════════════════════════════╣${RESET}"
+  local SVC_LIST=(
+    "ssh:TCP:$PORT_SSH"
+    "dropbear:TCP:${PORT_DROPBEAR},${PORT_DROPBEAR2}"
+    "nginx:TCP:80,443"
+    "stunnel4:TCP:$PORT_STUNNEL"
+    "ws-openssh:TCP:2095"
+    "ws-dropbear:TCP:$PORT_SSHWS"
+    "badvpn-udpgw:UDP:$PORT_UDPGW"
+    "slowdns:UDP:$PORT_SLOWDNS"
+  )
+  for entry in "${SVC_LIST[@]}"; do
+    svc="${entry%%:*}"; rest="${entry#*:}"; proto="${rest%%:*}"; ports="${rest#*:}"
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
-      printf "  ${BPURPLE}│${RESET}  ${BGREEN}● ACTIVE${RESET}  %-20s\n" "$svc"
+      STATUS="${BGREEN}● ACTIVE  ${RESET}"
     else
-      printf "  ${BPURPLE}│${RESET}  ${BRED}● INACTIVE${RESET} %-20s\n" "$svc"
+      STATUS="${BRED}● INACTIVE${RESET}"
     fi
+    printf "  ${BPURPLE}║${RESET}  %-18s  ${BPURPLE}║${RESET}  %b  ${BPURPLE}║${RESET}  ${DIM}%-6s${RESET} ${BWHITE}%-24s${RESET}  ${BPURPLE}║${RESET}\n" \
+      "$svc" "$STATUS" "$proto" "$ports"
   done
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────────────┘${RESET}"
+  echo -e "  ${BPURPLE}╚════════════════════╩══════════╩════════════════════════════════╝${RESET}"
   echo ""
 
-  echo -e "  ${BPURPLE}══════════════════════════════════════════════════════════════${RESET}"
-  echo -e "  ${BGREEN}${BOLD}  ✔  Akun berhasil dibuat!${RESET}  ${DIM}@devculturebot | tuyulbodo99${RESET}"
-  echo -e "  ${BPURPLE}══════════════════════════════════════════════════════════════${RESET}"
+  # ── Footer ─────────────────────────────────────────────────────
+  echo -e "  ${BPURPLE}╔${LINE}╗${RESET}"
+  echo -e "  ${BPURPLE}║${RESET}  ${BGREEN}${BOLD}  ✔  Akun SSH berhasil dibuat!${RESET}                                  ${BPURPLE}║${RESET}"
+  printf "  ${BPURPLE}║${RESET}  ${DIM}  Log: /root/dc-ssh-accounts.log %-30s${RESET}${BPURPLE}║${RESET}\n" ""
+  echo -e "  ${BPURPLE}╚${LINE}╝${RESET}"
   echo ""
 
-  # Simpan ke file log
-  local logfile="/root/dc-ssh-accounts.log"
+  # Simpan log
   {
     echo "============================================================"
-    echo "DATE     : $timestamp"
-    echo "USERNAME : $username"
-    echo "PASSWORD : $password"
-    echo "EXPIRES  : $exp_date"
-    echo "HOST     : $HOST"
-    echo "SSH PORT : $PORT_SSH | WS: $PORT_SSHWS | WSS: $PORT_SSHWSSL"
+    echo "DATE       : $TS"
+    echo "USERNAME   : $U"
+    echo "PASSWORD   : $P"
+    echo "EXPIRES    : $EXP"
+    echo "HOST       : $HOST"
+    echo "TCP PORTS  : SSH:$PORT_SSH | DB:$PORT_DROPBEAR,$PORT_DROPBEAR2 | WS:$PORT_SSHWS | WSS:$PORT_SSHWSSL | STN:$PORT_STUNNEL"
+    echo "UDP PORTS  : UDPGW:$PORT_UDPGW | SlowDNS:$PORT_SLOWDNS | OVPN-UDP:$PORT_OVPN_UDP"
+    echo "STRING     : ${U}@${P}:${HOST}:${PORT_SSH}"
     echo "============================================================"
-  } >> "$logfile"
-  echo -e "  ${DIM}  Log disimpan: $logfile${RESET}"
-  echo ""
+  } >> /root/dc-ssh-accounts.log 2>/dev/null || true
 }
 
-# ── Menu tambah akun ──────────────────────────────────────────────
+# ── Add user ──────────────────────────────────────────────────────
 add_user() {
-  read_config
-  clear
-  echo ""
+  read_config; clear; echo ""
   echo -e "  ${BPURPLE}╔══════════════════════════════════════════╗${RESET}"
-  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BWHITE}BUAT AKUN SSH + WEBSOCKET BARU${RESET}          ${BPURPLE}║${RESET}"
-  echo -e "  ${BPURPLE}╚══════════════════════════════════════════╝${RESET}"
-  echo ""
-
-  # Input username
-  while true; do
-    read -rp "  ${BCYAN}Username${RESET}      : " USERNAME
-    ERR=$(validate_user "$USERNAME" 2>&1) && break || echo -e "  ${BRED}✘ $ERR${RESET}"
-  done
-
-  # Input password
-  while true; do
-    read -rp "  ${BCYAN}Password${RESET}      : " PASSWORD
-    ERR=$(validate_pass "$PASSWORD" 2>&1) && break || echo -e "  ${BRED}✘ $ERR${RESET}"
-  done
-
-  # Input masa aktif
-  while true; do
-    read -rp "  ${BCYAN}Masa aktif${RESET}    : " DAYS
-    ERR=$(validate_exp "$DAYS" 2>&1) && break || echo -e "  ${BRED}✘ $ERR${RESET}"
-  done
-
-  EXPIRE=$(calc_expire "$DAYS")
-  echo ""
+  echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BWHITE}BUAT AKUN SSH + MULTI PORT + UDP${RESET}       ${BPURPLE}║${RESET}"
+  echo -e "  ${BPURPLE}╚══════════════════════════════════════════╝${RESET}"; echo ""
+  while true; do read -rp "  ${BCYAN}Username${RESET}   : " UN; ERR=$(validate_user "$UN" 2>&1) && break || echo -e "  ${BRED}✘ $ERR${RESET}"; done
+  while true; do read -rp "  ${BCYAN}Password${RESET}   : " PW; ERR=$(validate_pass "$PW" 2>&1) && break || echo -e "  ${BRED}✘ $ERR${RESET}"; done
+  while true; do read -rp "  ${BCYAN}Masa Aktif${RESET} : " DY; ERR=$(validate_exp "$DY" 2>&1) && break || echo -e "  ${BRED}✘ $ERR${RESET}"; done
+  EXP=$(calc_expire "$DY"); echo ""
   echo -e "  ${BYELLOW}Membuat akun...${RESET}"
-
-  # Cek apakah root
-  if [[ $EUID -ne 0 ]]; then
-    echo -e "  ${BRED}✘ Butuh root untuk membuat akun SSH!${RESET}"
-    echo -e "  ${DIM}  Jalankan: sudo bash adduser-ssh.sh${RESET}"
-    exit 1
-  fi
-
-  create_ssh_user "$USERNAME" "$PASSWORD" "$EXPIRE"
-  show_account "$USERNAME" "$PASSWORD" "$EXPIRE"
+  [[ $EUID -ne 0 ]] && { echo -e "  ${BRED}✘ Butuh root!${RESET}"; exit 1; }
+  create_ssh_user "$UN" "$PW" "$EXP"
+  show_account "$UN" "$PW" "$EXP"
 }
 
-# ── Lihat daftar akun ─────────────────────────────────────────────
+# ── List users ───────────────────────────────────────────────────
 list_users() {
-  read_config
-  clear
-  echo ""
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BWHITE}DAFTAR AKUN SSH AKTIF${RESET}                                     ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├────┬──────────────┬────────────┬────────┬──────────────────┤${RESET}"
-  printf "  ${BPURPLE}│${RESET} ${BOLD}%-2s${RESET} ${BPURPLE}│${RESET} ${BOLD}%-12s${RESET} ${BPURPLE}│${RESET} ${BOLD}%-10s${RESET} ${BPURPLE}│${RESET} ${BOLD}%-6s${RESET} ${BPURPLE}│${RESET} ${BOLD}%-16s${RESET} ${BPURPLE}│${RESET}\n" \
-    "No" "Username" "Expired" "Online" "Status"
-  echo -e "  ${BPURPLE}├────┼──────────────┼────────────┼────────┼──────────────────┤${RESET}"
-
-  local TODAY; TODAY=$(date '+%Y-%m-%d')
-  local IDX=0
-  while IFS=: read -r user _ uid gid _ home shell; do
+  read_config; clear; echo ""
+  echo -e "  ${BPURPLE}╔══════╦══════════════════╦════════════╦════════╦══════════════╗${RESET}"
+  printf "  ${BPURPLE}║${RESET} ${BOLD}%-4s${RESET} ${BPURPLE}║${RESET} ${BOLD}%-16s${RESET} ${BPURPLE}║${RESET} ${BOLD}%-10s${RESET} ${BPURPLE}║${RESET} ${BOLD}%-6s${RESET} ${BPURPLE}║${RESET} ${BOLD}%-12s${RESET} ${BPURPLE}║${RESET}\n" "No" "Username" "Expired" "Online" "Status"
+  echo -e "  ${BPURPLE}╠══════╬══════════════════╬════════════╬════════╬══════════════╣${RESET}"
+  local IDX=0 TODAY; TODAY=$(date '+%Y-%m-%d')
+  while IFS=: read -r user _ uid _ _ _ shell; do
     [[ "$uid" -lt 1000 ]] && continue
-    [[ "$shell" == */nologin ]] || [[ "$shell" == */false ]] || continue
+    [[ "$shell" == */nologin || "$shell" == */false ]] || continue
     local exp; exp=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
     [[ "$exp" == "never" || -z "$exp" ]] && continue
-    local exp_fmt; exp_fmt=$(date -d "$exp" '+%Y-%m-%d' 2>/dev/null || echo "$exp")
-    local online; online=$(who | grep -c "^$user " || echo "0")
+    local ef; ef=$(date -d "$exp" '+%Y-%m-%d' 2>/dev/null || echo "$exp")
+    local on; on=$(who | grep -c "^$user " 2>/dev/null || echo 0)
     IDX=$((IDX+1))
-    local color="$BGREEN"
-    local status="AKTIF"
-    if [[ "$exp_fmt" < "$TODAY" ]]; then color="$BRED"; status="EXPIRED"; fi
-    printf "  ${BPURPLE}│${RESET} ${color}%-2s${RESET} ${BPURPLE}│${RESET} ${color}%-12s${RESET} ${BPURPLE}│${RESET} ${color}%-10s${RESET} ${BPURPLE}│${RESET} ${color}%-6s${RESET} ${BPURPLE}│${RESET} ${color}%-16s${RESET} ${BPURPLE}│${RESET}\n" \
-      "$IDX" "$user" "$exp_fmt" "$online" "$status"
+    local C="$BGREEN" S="AKTIF"
+    [[ "$ef" < "$TODAY" ]] && C="$BRED" && S="EXPIRED"
+    printf "  ${BPURPLE}║${RESET} ${C}%-4s${RESET} ${BPURPLE}║${RESET} ${C}%-16s${RESET} ${BPURPLE}║${RESET} ${C}%-10s${RESET} ${BPURPLE}║${RESET} ${C}%-6s${RESET} ${BPURPLE}║${RESET} ${C}%-12s${RESET} ${BPURPLE}║${RESET}\n" \
+      "$IDX" "$user" "$ef" "$on" "$S"
   done < /etc/passwd
-  echo -e "  ${BPURPLE}└────┴──────────────┴────────────┴────────┴──────────────────┘${RESET}"
-  echo -e "  ${DIM}  Total: ${IDX} akun${RESET}"
-  echo ""
+  echo -e "  ${BPURPLE}╚══════╩══════════════════╩════════════╩════════╩══════════════╝${RESET}"
+  echo -e "  ${DIM}  Total: ${IDX} akun${RESET}"; echo ""
 }
 
-# ── Hapus akun ────────────────────────────────────────────────────
 delete_user() {
   list_users
-  read -rp "  ${BCYAN}Username yang akan dihapus${RESET}: " DEL_USER
-  [[ -z "$DEL_USER" ]] && { echo "Dibatalkan."; return; }
-  if ! id "$DEL_USER" &>/dev/null; then
-    echo -e "  ${BRED}✘ User '$DEL_USER' tidak ditemukan!${RESET}"; return
-  fi
-  # Kill semua sesi aktif
-  pkill -u "$DEL_USER" 2>/dev/null || true
-  userdel --force "$DEL_USER" 2>/dev/null
-  sed -i "/^$DEL_USER/d" /etc/security/limits.conf 2>/dev/null || true
-  echo -e "  ${BGREEN}✔ Akun '$DEL_USER' berhasil dihapus!${RESET}"
+  read -rp "  ${BCYAN}Username hapus${RESET}: " D
+  [[ -z "$D" ]] && return
+  id "$D" &>/dev/null || { echo -e "  ${BRED}✘ '$D' tidak ada!${RESET}"; return; }
+  pkill -u "$D" 2>/dev/null || true
+  userdel --force "$D" 2>/dev/null
+  sed -i "/^$D/d" /etc/security/limits.conf 2>/dev/null || true
+  echo -e "  ${BGREEN}✔ '$D' dihapus!${RESET}"
 }
 
-# ── Perpanjang akun ───────────────────────────────────────────────
 extend_user() {
   list_users
-  read -rp "  ${BCYAN}Username yang diperpanjang${RESET}: " EXT_USER
-  [[ -z "$EXT_USER" ]] && { echo "Dibatalkan."; return; }
-  if ! id "$EXT_USER" &>/dev/null; then
-    echo -e "  ${BRED}✘ User '$EXT_USER' tidak ditemukan!${RESET}"; return
-  fi
-  read -rp "  ${BCYAN}Tambah berapa hari${RESET}: " EXT_DAYS
-  if ! [[ "$EXT_DAYS" =~ ^[0-9]+$ ]]; then echo "Input tidak valid!"; return; fi
-  local NEW_EXP; NEW_EXP=$(date -d "+${EXT_DAYS} days" '+%Y-%m-%d')
-  chage -E "$NEW_EXP" "$EXT_USER"
-  echo -e "  ${BGREEN}✔ Akun '$EXT_USER' diperpanjang hingga ${BWHITE}${NEW_EXP}${RESET}"
+  read -rp "  ${BCYAN}Username perpanjang${RESET}: " E
+  [[ -z "$E" ]] && return
+  id "$E" &>/dev/null || { echo -e "  ${BRED}✘ '$E' tidak ada!${RESET}"; return; }
+  read -rp "  ${BCYAN}Tambah hari${RESET}: " ED
+  [[ "$ED" =~ ^[0-9]+$ ]] || { echo "Input tidak valid!"; return; }
+  local NE; NE=$(date -d "+${ED} days" '+%Y-%m-%d')
+  chage -E "$NE" "$E"
+  echo -e "  ${BGREEN}✔ '$E' diperpanjang hingga ${BWHITE}${NE}${RESET}"
 }
 
-# ── Menu utama ────────────────────────────────────────────────────
 main_menu() {
   while true; do
-    clear
-    echo ""
+    clear; echo ""
     echo -e "  ${BPURPLE}╔══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BWHITE}DevCulture — SSH + WebSocket User Manager${RESET}               ${BPURPLE}║${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${DIM}github.com/tuyulbodo99 • @devculturebot${RESET}                  ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${BOLD}${BWHITE}DevCulture — SSH Multi-Port + UDP Manager${RESET}              ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${DIM}TCP: SSH | Dropbear | WS | WSS | Stunnel${RESET}                  ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${DIM}UDP: UDPGW | SlowDNS | OpenVPN${RESET}                            ${BPURPLE}║${RESET}"
     echo -e "  ${BPURPLE}╠══════════════════════════════════════════════════════════════╣${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${BGREEN}[1]${RESET}  Buat Akun SSH + WebSocket Baru                        ${BPURPLE}║${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${BCYAN}[2]${RESET}  Lihat Daftar Akun Aktif                               ${BPURPLE}║${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${BYELLOW}[3]${RESET}  Perpanjang Masa Aktif Akun                            ${BPURPLE}║${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${BRED}[4]${RESET}  Hapus Akun SSH                                        ${BPURPLE}║${RESET}"
-    echo -e "  ${BPURPLE}║${RESET}  ${DIM}[0]  Keluar${RESET}                                                  ${BPURPLE}║${RESET}"
-    echo -e "  ${BPURPLE}╚══════════════════════════════════════════════════════════════╝${RESET}"
-    echo ""
-    read -rp "  Pilih [0-4]: " CHOICE
-    case "$CHOICE" in
-      1) add_user   ;;
-      2) list_users ;;
-      3) extend_user;;
-      4) delete_user;;
+    echo -e "  ${BPURPLE}║${RESET}  ${BGREEN}[1]${RESET}  Buat Akun SSH + Multi-Port + UDP                     ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${BCYAN}[2]${RESET}  Lihat Daftar Akun Aktif                              ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${BYELLOW}[3]${RESET}  Perpanjang Masa Aktif Akun                           ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${BRED}[4]${RESET}  Hapus Akun SSH                                       ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}║${RESET}  ${DIM}[0]  Keluar${RESET}                                                 ${BPURPLE}║${RESET}"
+    echo -e "  ${BPURPLE}╚══════════════════════════════════════════════════════════════╝${RESET}"; echo ""
+    read -rp "  Pilih [0-4]: " CH
+    case "$CH" in
+      1) add_user    ;;
+      2) list_users  ;;
+      3) extend_user ;;
+      4) delete_user ;;
       0) echo ""; exit 0 ;;
       *) echo -e "  ${BRED}Pilihan tidak valid!${RESET}" ;;
     esac
-    [[ "$CHOICE" != "0" ]] && read -rp "  Tekan Enter..." _
+    [[ "$CH" != "0" ]] && read -rp "  Tekan Enter..." _
   done
 }
 
-# ── Entry point ───────────────────────────────────────────────────
 case "${1:-menu}" in
   add)    add_user    ;;
   list)   list_users  ;;
   delete) delete_user ;;
   extend) extend_user ;;
   demo)
-    # Mode demo — tampilkan sample output tanpa buat user beneran
     read_config
     show_account "devculture" "dc@2024" "$(date -d '+30 days' '+%Y-%m-%d')"
     ;;
