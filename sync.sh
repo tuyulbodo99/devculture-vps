@@ -1,301 +1,231 @@
 #!/bin/bash
 # =================================================================
-#   DevCulture VPS — Central Sync & Auto-Update System v1.1.0
-#   Menghubungkan & menyinkronkan semua komponen DevCulture
-#   github.com/tuyulbodo99 | @devculturebot
+#   DevCulture VPS — Cross-Repo Sync Script  v1.0.0
+#   Sinkronisasi perbaikan script ke repo VPS lainnya
+#   via GitHub API.
+#
+#   Cara pakai:
+#     GITHUB_TOKEN=ghp_xxx bash sync.sh
+#   atau:
+#     export GITHUB_TOKEN=ghp_xxx
+#     bash sync.sh
+#
+#   Repo yang disinkronisasi:
+#     - tuyulbodo99/hokagescript  (ssh/, xray/, update/, websocket/)
+#
+#   @devculturebot | github.com/tuyulbodo99/devculture-vps
 # =================================================================
 set -euo pipefail
 
-RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"
-BCYAN="\033[1;36m"; BGREEN="\033[1;32m"
-BYELLOW="\033[1;33m"; BRED="\033[1;31m"; BPURPLE="\033[1;35m"
-BWHITE="\033[1;37m"
+DC_BASE="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main"
+DC_API="https://api.github.com/repos/tuyulbodo99/devculture-vps/contents"
+OWNER="tuyulbodo99"
 
-DC_VERSION="1.1.0"
-BASE="https://raw.githubusercontent.com/tuyulbodo99"
-LOCK="/tmp/dc-sync.lock"
+# ─── Warna ───────────────────────────────────────────────────────
+GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
+CYAN='\033[1;36m'; NC='\033[0m'; BOLD='\033[1m'
+ok()   { echo -e "  ${GREEN}✔${NC}  $*"; }
+err()  { echo -e "  ${RED}✘${NC}  $*"; }
+info() { echo -e "  ${YELLOW}→${NC}  $*"; }
+head_msg() { echo -e "\n${CYAN}${BOLD}$*${NC}"; }
 
-# ── Setup path berdasarkan root/non-root ─────────────────────────
-if [[ $EUID -eq 0 ]]; then
-  LOG="/var/log/devculture-sync.log"
-  SYNC_DIR="/etc/devculture/sync"
-  IJIN_DB="/etc/devculture/ijin.db"
-  CRON_FILE="/etc/cron.d/devculture-sync"
-else
-  LOG="/tmp/devculture-sync.log"
-  SYNC_DIR="$HOME/.devculture/sync"
-  IJIN_DB="$HOME/.devculture/ijin.db"
-  CRON_FILE=""
-fi
-
-# ── Daftar komponen yang disinkronkan ────────────────────────────
-COMP_NAMES=(
-  "devculture-panel"
-  "dc-notify"
-  "dc-monitor"
-  "ssl-renew"
-  "vpn-menu-update"
-  "hokage-menu"
-  "hokage-update"
-)
-COMP_URLS=(
-  "${BASE}/devculture-vps/main/devculture"
-  "${BASE}/devculture-vps/main/bot/notify.sh"
-  "${BASE}/devculture-vps/main/bot/monitor.sh"
-  "${BASE}/devculture-vps/main/ssl/ssl-renew.sh"
-  "${BASE}/vpnscript/main/update.sh"
-  "${BASE}/hokagescript/main/update/menu.sh"
-  "${BASE}/hokagescript/main/update/update.sh"
-)
-COMP_DSTS=(
-  "/usr/local/bin/devculture"
-  "/usr/local/bin/dc-notify"
-  "/usr/local/bin/dc-monitor"
-  "/usr/local/bin/ssl-renew.sh"
-  "/tmp/dc-vpn-update.sh"
-  "/usr/local/sbin/menu"
-  "/usr/local/bin/dc-update"
-)
-
-# ── Init direktori dan log ────────────────────────────────────────
-mkdir -p "$SYNC_DIR" 2>/dev/null || true
-touch "$LOG" 2>/dev/null || LOG="/tmp/devculture-sync.log" && touch "$LOG"
-
-# ── Cek lock ─────────────────────────────────────────────────────
-if [[ -f "$LOCK" ]]; then
-  echo -e "${BRED}[ERROR]${RESET} Sync sedang berjalan (lock: $LOCK). Keluar." >&2
+# ─── Cek token ───────────────────────────────────────────────────
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  err "GITHUB_TOKEN tidak diset!"
+  echo ""
+  echo "  Cara pakai:  GITHUB_TOKEN=ghp_xxx bash sync.sh"
   exit 1
 fi
-touch "$LOCK"
-trap "rm -f '$LOCK'" EXIT
 
-# ── Banner ────────────────────────────────────────────────────────
-banner() {
-  clear
-  echo -e "${BPURPLE}"
-  echo "  ██████╗ ███████╗██╗   ██╗ ██████╗██╗   ██╗██╗  ████████╗██╗   ██╗██████╗ ███████╗"
-  echo "  ██╔══██╗██╔════╝██║   ██║██╔════╝██║   ██║██║  ╚══██╔══╝██║   ██║██╔══██╗██╔════╝"
-  echo "  ██║  ██║█████╗  ██║   ██║██║     ██║   ██║██║     ██║   ██║   ██║██████╔╝█████╗  "
-  echo "  ██║  ██║██╔══╝  ╚██╗ ██╔╝██║     ██║   ██║██║     ██║   ██║   ██║██╔══██╗██╔══╝  "
-  echo "  ██████╔╝███████╗ ╚████╔╝ ╚██████╗╚██████╔╝███████╗██║   ╚██████╔╝██║  ██║███████╗"
-  echo "  ╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝"
-  echo -e "${RESET}"
-  echo -e "  ${BPURPLE}${BOLD}  Central Sync System  v${DC_VERSION}${RESET}  ${DIM}│  github.com/tuyulbodo99${RESET}"
-  echo ""
+# ─── Helper: get file SHA ────────────────────────────────────────
+get_sha() {
+  local REPO="$1" PATH="$2"
+  curl -sf "https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}" \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    2>/dev/null \
+  | grep '"sha"' | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true
 }
 
-# ── Helpers ───────────────────────────────────────────────────────
-info()    { echo -e "  ${BCYAN}[INFO]${RESET}    $*"; }
-success() { echo -e "  ${BGREEN}[OK]${RESET}      $*"; }
-warn()    { echo -e "  ${BYELLOW}[WARN]${RESET}    $*"; }
-error()   { echo -e "  ${BRED}[ERROR]${RESET}   $*"; }
-step()    { echo -e "  ${BPURPLE}[SYNC]${RESET}    $*"; }
+# ─── Helper: get file content as base64 from devculture-vps ──────
+get_dc_content_b64() {
+  local FPATH="$1"
+  curl -sf "${DC_API}/${FPATH}" \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    2>/dev/null \
+  | grep '"content"' | head -1 \
+  | sed 's/.*"content"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' \
+  | tr -d '\\n' || true
+}
 
-# FIX #6: Validasi file tidak kosong setelah download
-safe_dl() {
-  local url="$1" dst="$2"
-  local tmp; tmp=$(mktemp /tmp/dc-dl-XXXXX)
-  if curl -fsSL --max-time 30 "$url" -o "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
-    mv "$tmp" "$dst"
-    return 0
-  elif command -v wget >/dev/null 2>&1 && wget -qO "$tmp" "$url" 2>/dev/null && [[ -s "$tmp" ]]; then
-    mv "$tmp" "$dst"
+# ─── Helper: upload to target repo ───────────────────────────────
+upload_to_repo() {
+  local REPO="$1" DST_PATH="$2" CONTENT_B64="$3" MSG="$4"
+  local SHA
+  SHA=$(get_sha "$REPO" "$DST_PATH")
+
+  local PAYLOAD
+  if [[ -n "$SHA" ]]; then
+    PAYLOAD="{\"message\":\"${MSG}\",\"content\":\"${CONTENT_B64}\",\"sha\":\"${SHA}\"}"
+  else
+    PAYLOAD="{\"message\":\"${MSG}\",\"content\":\"${CONTENT_B64}\"}"
+  fi
+
+  local RESULT
+  RESULT=$(curl -sf -X PUT \
+    "https://api.github.com/repos/${OWNER}/${REPO}/contents/${DST_PATH}" \
+    -H "Authorization: token ${GITHUB_TOKEN}" \
+    -H "Accept: application/vnd.github.v3+json" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" 2>/dev/null \
+    | grep '"name"' | head -1 | sed 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)
+
+  if [[ -n "$RESULT" ]]; then
+    ok "${REPO}/${DST_PATH}"
     return 0
   else
-    rm -f "$tmp"
+    err "${REPO}/${DST_PATH} — gagal upload"
     return 1
   fi
 }
 
-check_internet() {
-  if ! curl -fsSL --max-time 5 https://github.com >/dev/null 2>&1; then
-    error "Tidak ada koneksi internet! Script dihentikan."
-    exit 1
+# ─── Helper: sync satu file DC → target ──────────────────────────
+sync_file() {
+  local SRC_PATH="$1" REPO="$2" DST_PATH="${3:-$1}"
+  local MSG="$4"
+  info "Syncing ${SRC_PATH} → ${REPO}/${DST_PATH}..."
+
+  local B64
+  B64=$(get_dc_content_b64 "$SRC_PATH")
+  if [[ -z "$B64" ]]; then
+    err "Gagal ambil konten dari devculture-vps/${SRC_PATH}"
+    return 1
   fi
-  success "Koneksi internet OK"
+  upload_to_repo "$REPO" "$DST_PATH" "$B64" "$MSG"
 }
 
-# FIX #2: Root check dengan pesan jelas
-require_root() {
-  if [[ $EUID -ne 0 ]]; then
-    echo ""
-    echo -e "  ${BYELLOW}╔══════════════════════════════════════════════════╗${RESET}"
-    echo -e "  ${BYELLOW}║${RESET}  ${BRED}${BOLD}PERINGATAN: Script dijalankan tanpa root!${RESET}      ${BYELLOW}║${RESET}"
-    echo -e "  ${BYELLOW}║${RESET}  Instalasi komponen ke /usr/local/bin akan GAGAL ${BYELLOW}║${RESET}"
-    echo -e "  ${BYELLOW}║${RESET}  Jalankan dengan: ${BWHITE}sudo bash sync.sh${RESET}              ${BYELLOW}║${RESET}"
-    echo -e "  ${BYELLOW}╚══════════════════════════════════════════════════╝${RESET}"
-    echo ""
-    read -rp "  Tetap lanjutkan? (beberapa fitur tidak akan berfungsi) [y/N]: " CONFIRM
-    [[ "${CONFIRM,,}" == "y" ]] || exit 0
-  fi
+# ─── Helper: upload file lokal → repo ────────────────────────────
+upload_local() {
+  local LOCAL="$1" REPO="$2" DST_PATH="$3" MSG="$4"
+  local B64
+  B64=$(base64 -w 0 "$LOCAL")
+  upload_to_repo "$REPO" "$DST_PATH" "$B64" "$MSG"
 }
 
-# ── Sync database ijin ────────────────────────────────────────────
-sync_permissions() {
-  step "Memperbarui database ijin dari tuyulbodo99/ijin..."
-  local IJIN_URL="${BASE}/ijin/main/youtube"
-  mkdir -p "$(dirname "$IJIN_DB")" 2>/dev/null || true
-  if safe_dl "$IJIN_URL" "$IJIN_DB"; then
-    success "Database ijin berhasil diperbarui → ${DIM}${IJIN_DB}${RESET}"
+# ================================================================
+# BANNER
+# ================================================================
+clear
+echo -e "${CYAN}${BOLD}"
+echo "  ╔══════════════════════════════════════════════╗"
+echo "  ║   DevCulture VPS — Cross-Repo Sync  v1.0    ║"
+echo "  ║   github.com/tuyulbodo99/devculture-vps      ║"
+echo "  ╚══════════════════════════════════════════════╝"
+echo -e "${NC}"
+echo "  Token : ${GITHUB_TOKEN:0:8}***"
+echo "  Date  : $(date '+%Y-%m-%d %H:%M %Z')"
+echo ""
+
+TOTAL_OK=0; TOTAL_ERR=0
+
+# ================================================================
+# SYNC: devculture-vps → hokagescript
+# ================================================================
+head_msg "[ hokagescript ]  Syncing shared scripts..."
+
+declare -A SYNC_MAP=(
+  # websocket — identik
+  ["websocket/insshws.sh"]="websocket/insshws.sh"
+  # xray — shared base (ins-xray.sh pakai path hokagescript sendiri)
+  # update scripts — bisa langsung dipakai
+  ["update/update-devculture.sh"]="update/update-devculture.sh"
+  ["lib/utils.sh"]="lib/utils.sh"
+)
+
+for SRC in "${!SYNC_MAP[@]}"; do
+  DST="${SYNC_MAP[$SRC]}"
+  if sync_file "$SRC" "hokagescript" "$DST" "sync: update ${DST} dari devculture-vps"; then
+    TOTAL_OK=$((TOTAL_OK + 1))
   else
-    warn "Gagal memperbarui database ijin (akan gunakan cache lama)"
+    TOTAL_ERR=$((TOTAL_ERR + 1))
   fi
-}
+  sleep 0.3
+done
 
-# ── Validasi ijin VPS ini ─────────────────────────────────────────
-check_permission() {
-  step "Validasi ijin VPS ini..."
-  local MYIP; MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null \
-    || curl -sS --max-time 5 ifconfig.me 2>/dev/null \
-    || hostname -I 2>/dev/null | awk '{print $1}' \
-    || echo "unknown")
-  local IZIN=""
-  if [[ -f "$IJIN_DB" ]]; then
-    IZIN=$(awk '{print $4}' "$IJIN_DB" | grep -w "$MYIP" 2>/dev/null || true)
+# Upload file yang sudah dipatch khusus untuk hokagescript
+head_msg "[ hokagescript ]  Upload patched files..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOKAGE_SSH_VPN="${SCRIPT_DIR}/scripts/hokagescript/ssh-vpn.sh"
+HOKAGE_SETUP="${SCRIPT_DIR}/scripts/hokagescript/setup.sh"
+
+# Jika file patch tersedia secara lokal
+if [[ -f "$HOKAGE_SSH_VPN" ]]; then
+  if upload_local "$HOKAGE_SSH_VPN" "hokagescript" "ssh/ssh-vpn.sh" \
+    "fix: ssh-vpn.sh — hapus \$ANU undefined, perbaiki sed tanpa file target, fix URL"; then
+    TOTAL_OK=$((TOTAL_OK + 1))
   else
-    IZIN=$(curl -sS --max-time 10 "${BASE}/ijin/main/youtube" 2>/dev/null \
-      | awk '{print $4}' | grep -w "$MYIP" 2>/dev/null || true)
+    TOTAL_ERR=$((TOTAL_ERR + 1))
   fi
-  if [[ -n "$IZIN" ]]; then
-    success "VPS terotorisasi: ${BWHITE}${MYIP}${RESET}"
+else
+  # Fallback: ambil dari devculture-vps dan patch on-the-fly
+  info "Patching hokagescript/ssh/ssh-vpn.sh on-the-fly..."
+  TMP_SSH=$(mktemp /tmp/hk-ssh-XXXXX.sh)
+  curl -fsSL "${DC_BASE}/ssh/ssh-vpn.sh" -o "$TMP_SSH" 2>/dev/null || \
+    wget -qO "$TMP_SSH" "${DC_BASE}/ssh/ssh-vpn.sh" 2>/dev/null
+  # Ganti branding devculture → hokagescript
+  sed -i 's|tuyulbodo99/devculture-vps|tuyulbodo99/hokagescript|g' "$TMP_SSH"
+  sed -i 's|organization=DevCulture|organization=HOKAGE|g' "$TMP_SSH"
+  sed -i 's|organizationalunit=DevCulture|organizationalunit=HOKAGE|g' "$TMP_SSH"
+  sed -i 's|email=admin@devculture.id|email=hokagelegend99@gmail.com|g' "$TMP_SSH"
+  if upload_local "$TMP_SSH" "hokagescript" "ssh/ssh-vpn.sh" \
+    "fix: ssh-vpn.sh — hapus \$ANU undefined, perbaiki sed tanpa file target"; then
+    TOTAL_OK=$((TOTAL_OK + 1))
   else
-    warn "VPS tidak terdaftar: ${BYELLOW}${MYIP}${RESET}"
-    info "Hubungi admin untuk mendaftarkan VPS Anda"
+    TOTAL_ERR=$((TOTAL_ERR + 1))
   fi
-}
+  rm -f "$TMP_SSH"
+fi
+sleep 0.3
 
-# ── Sync satu komponen ────────────────────────────────────────────
-sync_component() {
-  local name="$1" url="$2" dst="$3"
-  local tmp; tmp=$(mktemp /tmp/dc-sync-XXXXX)
-  step "Syncing: ${BWHITE}${name}${RESET}"
-  if safe_dl "$url" "$tmp"; then
-    chmod +x "$tmp"
-    mkdir -p "$(dirname "$dst")" 2>/dev/null || true
-    if mv "$tmp" "$dst" 2>/dev/null; then
-      echo "$(date '+%Y-%m-%d %H:%M:%S') SYNCED $name -> $dst" >> "$SYNC_DIR/sync.log" 2>/dev/null || true
-      success "$name diperbarui → ${DIM}$dst${RESET}"
-    else
-      warn "$name gagal dipindahkan ke $dst (perlu root?)"
-      rm -f "$tmp"
-    fi
+if [[ -f "$HOKAGE_SETUP" ]]; then
+  if upload_local "$HOKAGE_SETUP" "hokagescript" "setup.sh" \
+    "fix: setup.sh — hapus PERMISSION undefined, ganti URL dari hokagelegend9999/original"; then
+    TOTAL_OK=$((TOTAL_OK + 1))
   else
-    warn "$name gagal diunduh (URL tidak tersedia), skip."
-    rm -f "$tmp"
+    TOTAL_ERR=$((TOTAL_ERR + 1))
   fi
-}
-
-# FIX #4: install_cron dengan error handling ─────────────────────
-install_cron() {
-  if [[ $EUID -ne 0 ]]; then
-    warn "Cron otomatis tidak dapat dipasang tanpa root. Skip."
-    info "Jalankan manual: sudo bash sync.sh untuk install cron"
-    return 0
-  fi
-  if [[ ! -f "$CRON_FILE" ]]; then
-    cat > "$CRON_FILE" << CRONEOF
-SHELL=/bin/bash
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-0 3 * * * root bash <(curl -fsSL ${BASE}/devculture-vps/main/sync.sh) --cron >> $LOG 2>&1
-CRONEOF
-    chmod 644 "$CRON_FILE"
-    success "Cron auto-sync terpasang: setiap hari pukul 03:00"
-    info "File cron: $CRON_FILE"
+else
+  info "Patching hokagescript/setup.sh on-the-fly..."
+  TMP_SETUP=$(mktemp /tmp/hk-setup-XXXXX.sh)
+  curl -fsSL "${DC_BASE}/setup.sh" -o "$TMP_SETUP" 2>/dev/null || \
+    wget -qO "$TMP_SETUP" "${DC_BASE}/setup.sh" 2>/dev/null
+  sed -i 's|tuyulbodo99/devculture-vps|tuyulbodo99/hokagescript|g' "$TMP_SETUP"
+  sed -i 's|DevCulture VPS|HokageScript VPS|g' "$TMP_SETUP"
+  if upload_local "$TMP_SETUP" "hokagescript" "setup.sh" \
+    "fix: setup.sh — hapus PERMISSION undefined, ganti URL dari hokagelegend9999/original"; then
+    TOTAL_OK=$((TOTAL_OK + 1))
   else
-    info "Cron sudah terpasang di $CRON_FILE"
+    TOTAL_ERR=$((TOTAL_ERR + 1))
   fi
-}
+  rm -f "$TMP_SETUP"
+fi
+sleep 0.3
 
-# ── Report status komponen ────────────────────────────────────────
-status_report() {
-  echo ""
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}${BWHITE}STATUS KOMPONEN DEVCULTURE${RESET}                          ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}├─────────────────────────────────────────────────────┤${RESET}"
-  local entries=(
-    "/usr/local/bin/devculture:DevCulture Panel"
-    "/usr/local/bin/dc-notify:DC Notify"
-    "/usr/local/bin/dc-monitor:DC Monitor"
-    "/usr/local/bin/ssl-renew.sh:SSL Renewer"
-    "/usr/local/sbin/menu:VPN Menu"
-    "/usr/local/bin/dc-update:Update Script"
-    "${IJIN_DB}:Ijin Database"
-    "${CRON_FILE:-/etc/cron.d/devculture-sync}:Auto-Sync Cron"
-  )
-  for entry in "${entries[@]}"; do
-    local path="${entry%%:*}" label="${entry##*:}"
-    if [[ -f "$path" ]]; then
-      printf "  ${BPURPLE}│${RESET}  ${BGREEN}✔${RESET}  %-28s  ${DIM}%s${RESET}\n" "$label" "$path"
-    else
-      printf "  ${BPURPLE}│${RESET}  ${BRED}✘${RESET}  ${DIM}%-28s  belum terinstall${RESET}\n" "$label"
-    fi
-  done
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────┘${RESET}"
-  echo ""
-  echo -e "  ${DIM}Log: $LOG${RESET}"
-  echo -e "  ${DIM}Root: $([ $EUID -eq 0 ] && echo 'Ya' || echo 'Tidak')${RESET}"
-  echo ""
-}
+# ================================================================
+# RINGKASAN
+# ================================================================
+echo ""
+echo -e "  ${CYAN}══════════════════════════════════════════════${NC}"
+echo -e "  ${BOLD}Hasil Sync${NC}"
+echo -e "  ${GREEN}✔ Berhasil${NC} : ${TOTAL_OK}"
+if [[ $TOTAL_ERR -gt 0 ]]; then
+  echo -e "  ${RED}✘ Gagal${NC}    : ${TOTAL_ERR}"
+else
+  echo -e "  Gagal    : 0"
+fi
+echo -e "  ${CYAN}══════════════════════════════════════════════${NC}"
+echo ""
 
-# ── Main ──────────────────────────────────────────────────────────
-# FIX #1: Gunakan "$@" bukan "${@:-}"
-main() {
-  local MODE="${1:-interactive}"
-
-  # FIX #3: Mode cron — log ke file dengan fallback
-  if [[ "$MODE" == "--cron" ]]; then
-    if [[ -w "$LOG" ]] || touch "$LOG" 2>/dev/null; then
-      exec >> "$LOG" 2>&1
-    fi
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [CRON] Memulai auto-sync v${DC_VERSION}..."
-    check_internet 2>/dev/null || { echo "$(date) [CRON] Tidak ada internet, batal."; exit 0; }
-    sync_permissions
-    for i in "${!COMP_NAMES[@]}"; do
-      sync_component "${COMP_NAMES[$i]}" "${COMP_URLS[$i]}" "${COMP_DSTS[$i]}"
-    done
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [CRON] Sync selesai."
-    exit 0
-  fi
-
-  # Mode status
-  if [[ "$MODE" == "--status" ]]; then
-    banner
-    status_report
-    exit 0
-  fi
-
-  # Mode interaktif
-  banner
-  check_internet
-  require_root
-
-  echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────┐${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${BOLD}Sinkronisasi semua komponen DevCulture${RESET}              ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${DIM}Repo: devculture-vps · hokagescript · vpnscript${RESET}    ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}│${RESET}  ${DIM}Ijin: tuyulbodo99/ijin${RESET}                               ${BPURPLE}│${RESET}"
-  echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────┘${RESET}"
-  echo ""
-
-  sync_permissions
-  check_permission
-
-  echo ""
-  info "Menyinkronkan ${#COMP_NAMES[@]} komponen..."
-  echo ""
-
-  for i in "${!COMP_NAMES[@]}"; do
-    sync_component "${COMP_NAMES[$i]}" "${COMP_URLS[$i]}" "${COMP_DSTS[$i]}"
-  done
-
-  install_cron
-
-  echo ""
-  echo -e "  ${BPURPLE}══════════════════════════════════════════════════════${RESET}"
-  echo -e "  ${BGREEN}${BOLD}  ✔  Sinkronisasi selesai!${RESET}"
-  echo -e "  ${DIM}  Log: $LOG${RESET}"
-  echo -e "  ${BPURPLE}══════════════════════════════════════════════════════${RESET}"
-  echo ""
-  status_report
-}
-
-main "$@"
+[[ $TOTAL_ERR -gt 0 ]] && exit 1 || exit 0
