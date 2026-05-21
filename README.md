@@ -6,8 +6,7 @@
 
 [![Version](https://img.shields.io/badge/version-3.2.0-9b59b6?style=for-the-badge&logo=git&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
 [![Shell](https://img.shields.io/badge/shell-bash-1a1a2e?style=for-the-badge&logo=gnubash&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
-[![License](https://img.shields.io/badge/license-Private-6c3483?style=for-the-badge)](https://github.com/tuyulbodo99/devculture-vps)
-[![OS](https://img.shields.io/badge/OS-Debian%20%7C%20Ubuntu-2c2c54?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
+[![OS](https://img.shields.io/badge/OS-Ubuntu%20%7C%20Debian-2c2c54?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
 [![Sync](https://img.shields.io/badge/ecosystem-connected-5b2c6f?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/tuyulbodo99)
 
 ```
@@ -25,6 +24,28 @@
 
 ---
 
+## ⚡ Install — Satu Perintah, Langsung Jalan
+
+> **Copy → Paste → Enter. Selesai.**
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)
+```
+
+### 🔄 Sync & Update Semua Komponen
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/sync.sh)
+```
+
+### 🛡️ Kelola Database Ijin (Admin)
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/ijin/main/check-ijin.sh)
+```
+
+---
+
 ## 🟣 Overview
 
 **DevCulture VPS** adalah script manajemen VPS premium all-in-one yang mendukung SSH, Xray (VMess/VLess/Trojan), WebSocket, OpenVPN, Telegram Bot, SSL otomatis, dan sistem sinkronisasi terpusat di seluruh ekosistem DevCulture.
@@ -33,29 +54,15 @@
 
 ## 🌐 Ekosistem DevCulture
 
-> Semua repo terhubung dan disinkronkan melalui **Central Sync System**
+> Semua repo terhubung dan disinkronkan otomatis via **Central Sync System**
 
-| Repo | Fungsi | Status |
-|------|--------|--------|
-| [`devculture-vps`](https://github.com/tuyulbodo99/devculture-vps) | 🏠 Core — installer & panel utama | ✅ Active |
-| [`hokagescript`](https://github.com/tuyulbodo99/hokagescript) | ⚙️ Menu & service scripts | ✅ Active |
-| [`vpnscript`](https://github.com/tuyulbodo99/vpnscript) | 🔒 VPN installer lengkap | ✅ Active |
-| [`vps-script`](https://github.com/tuyulbodo99/vps-script) | 🔧 SSH tunnel setup | ✅ Active |
-| [`ijin`](https://github.com/tuyulbodo99/ijin) | 🛡️ License & permission system | ✅ Active |
-
----
-
-## ⚡ Quick Install
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)
-```
-
-### Sync & Update Semua Komponen
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/sync.sh)
-```
+| Repo | Fungsi | One-Click Install |
+|------|--------|-------------------|
+| [`devculture-vps`](https://github.com/tuyulbodo99/devculture-vps) | 🏠 Core — installer & panel utama | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)` |
+| [`hokagescript`](https://github.com/tuyulbodo99/hokagescript) | ⚙️ Menu & service scripts | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/hokagescript/main/setup.sh)` |
+| [`vpnscript`](https://github.com/tuyulbodo99/vpnscript) | 🔒 VPN installer lengkap | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/vpnscript/main/premi.sh)` |
+| [`vps-script`](https://github.com/tuyulbodo99/vps-script) | 🔧 SSH tunnel setup | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/vps-script/main/install)` |
+| [`ijin`](https://github.com/tuyulbodo99/ijin) | 🛡️ License & permission DB | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/ijin/main/check-ijin.sh)` |
 
 ---
 
@@ -97,10 +104,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/m
 <td>
 
 ### 🔄 Sync System
-- Central auto-update harian
+- Central auto-update harian (03:00)
 - Sinkronisasi antar semua repo
 - Database ijin terpusat
-- Version tracking
+- Log di `/var/log/devculture-sync.log`
 
 </td>
 </tr>
@@ -108,15 +115,15 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/m
 
 ---
 
-## 🛠️ Menu Panel
+## 🛠️ Perintah Panel
 
-```
-devculture              → Buka panel interaktif
-devculture status       → Status sistem & services
-devculture restart      → Restart semua service
-devculture update       → Update ke versi terbaru
-devculture ssl          → Renew SSL certificate
-devculture log          → Lihat log instalasi
+```bash
+devculture              # Buka panel interaktif
+devculture status       # Status sistem & services
+devculture restart      # Restart semua service
+devculture update       # Update ke versi terbaru
+devculture ssl          # Renew SSL certificate
+devculture log          # Lihat log instalasi
 ```
 
 ---
@@ -125,62 +132,40 @@ devculture log          → Lihat log instalasi
 
 ```
 devculture-vps/
-├── install.sh          # Installer utama
+├── install.sh          # 🚀 Installer utama (one-click)
 ├── setup.sh            # Setup core (SSH + Xray + VPN)
-├── devculture          # Panel management script
-├── dependencies.sh     # Instalasi dependensi
 ├── sync.sh             # 🔗 Central sync system
+├── devculture          # Panel management script
 ├── uninstall.sh        # Uninstaller
-├── lib/
-│   └── utils.sh        # Shared utility functions
-├── ssh/                # SSH & OpenVPN scripts
+├── lib/                # Shared utilities
+├── ssh/                # SSH & Dropbear scripts
 ├── xray/               # Xray installation
 ├── bot/                # Telegram bot
 ├── ssl/                # SSL auto-renewal
-├── udp/                # UDP support
 ├── vpn/                # VPN configs
 ├── websocket/          # WebSocket setup
-├── update/             # Update scripts
-└── backup/             # Backup & restore
+└── update/             # Update scripts
 ```
-
----
-
-## 📋 Sistem Ijin
-
-Script ini menggunakan sistem lisensi berbasis IP. VPS Anda harus terdaftar di database:
-
-```
-tuyulbodo99/ijin → youtube (license database)
-```
-
-Hubungi admin untuk mendaftarkan VPS Anda.
 
 ---
 
 ## 🔧 Requirements
 
-| Komponen | Versi |
-|----------|-------|
+| Komponen | Keterangan |
+|----------|------------|
 | OS | Debian 10/11/12 · Ubuntu 20.04/22.04 |
-| Akses | Root |
-| RAM | Minimum 256 MB |
-| Disk | Minimum 300 MB free |
+| Akses | **Root** (`sudo` atau `su -`) |
+| RAM | Min. 256 MB |
+| Disk | Min. 300 MB free |
 | Network | IP Publik + Domain |
 
 ---
 
-## 📞 Kontak
-
 <div align="center">
 
-[![Telegram](https://img.shields.io/badge/Telegram-@devculturebot-9b59b6?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/devculturebot)
+[![Telegram](https://img.shields.io/badge/Order%20%26%20Support-@devculturebot-9b59b6?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/devculturebot)
 [![GitHub](https://img.shields.io/badge/GitHub-tuyulbodo99-1a1a2e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/tuyulbodo99)
 
-</div>
-
----
-
-<div align="center">
 <sub>© 2024 DevCulture VPS Store · Built with 🟣 by <a href="https://github.com/tuyulbodo99">tuyulbodo99</a></sub>
+
 </div>
