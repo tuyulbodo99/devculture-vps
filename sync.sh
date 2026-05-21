@@ -1,35 +1,32 @@
 #!/bin/bash
 # =================================================================
-#   DevCulture VPS — Cross-Repo Sync Script  v1.0.0
-#   Sinkronisasi perbaikan script ke repo VPS lainnya
-#   via GitHub API.
+#   DevCulture VPS — Cross-Repo Sync Script  v1.1.0
+#   Sinkronisasi perbaikan script ke repo VPS lainnya via GitHub API
 #
-#   Cara pakai:
+#   Cara pakai manual:
 #     GITHUB_TOKEN=ghp_xxx bash sync.sh
-#   atau:
-#     export GITHUB_TOKEN=ghp_xxx
-#     bash sync.sh
 #
-#   Repo yang disinkronisasi:
-#     - tuyulbodo99/hokagescript  (ssh/, xray/, update/, websocket/)
-#
+#   Dijalankan otomatis oleh: .github/workflows/sync.yml
 #   @devculturebot | github.com/tuyulbodo99/devculture-vps
 # =================================================================
 set -euo pipefail
 
-DC_BASE="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main"
-DC_API="https://api.github.com/repos/tuyulbodo99/devculture-vps/contents"
 OWNER="tuyulbodo99"
+DC_REPO="devculture-vps"
+DC_API="https://api.github.com/repos/${OWNER}/${DC_REPO}/contents"
 
-# ─── Warna ───────────────────────────────────────────────────────
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
 CYAN='\033[1;36m'; NC='\033[0m'; BOLD='\033[1m'
-ok()   { echo -e "  ${GREEN}✔${NC}  $*"; }
-err()  { echo -e "  ${RED}✘${NC}  $*"; }
-info() { echo -e "  ${YELLOW}→${NC}  $*"; }
-head_msg() { echo -e "\n${CYAN}${BOLD}$*${NC}"; }
 
-# ─── Cek token ───────────────────────────────────────────────────
+ok()      { echo -e "  ${GREEN}OK${NC}  $*"; }
+err()     { echo -e "  ${RED}ERR${NC} $*"; [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::error::$*" || true; }
+info()    { echo -e "  ${YELLOW}--${NC}  $*"; }
+section() { echo -e "\n${CYAN}${BOLD}>> $*${NC}"; }
+warn()    { echo -e "  ${YELLOW}WARN${NC} $*"; [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::warning::$*" || true; }
+notice()  { [[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "::notice::$*" || true; }
+
+TOTAL_OK=0; TOTAL_ERR=0; TOTAL_SKIP=0
+
 if [[ -z "${GITHUB_TOKEN:-}" ]]; then
   err "GITHUB_TOKEN tidak diset!"
   echo ""
@@ -37,195 +34,169 @@ if [[ -z "${GITHUB_TOKEN:-}" ]]; then
   exit 1
 fi
 
-# ─── Helper: get file SHA ────────────────────────────────────────
 get_sha() {
-  local REPO="$1" PATH="$2"
-  curl -sf "https://api.github.com/repos/${OWNER}/${REPO}/contents/${PATH}" \
+  local REPO="$1" FPATH="$2"
+  curl -sf "https://api.github.com/repos/${OWNER}/${REPO}/contents/${FPATH}" \
     -H "Authorization: token ${GITHUB_TOKEN}" \
-    -H "Accept: application/vnd.github.v3+json" \
-    2>/dev/null \
-  | grep '"sha"' | head -1 | sed 's/.*"sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true
+    -H "Accept: application/vnd.github.v3+json" 2>/dev/null \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sha',''))" 2>/dev/null || true
 }
 
-# ─── Helper: get file content as base64 from devculture-vps ──────
-get_dc_content_b64() {
+get_dc_b64() {
   local FPATH="$1"
   curl -sf "${DC_API}/${FPATH}" \
     -H "Authorization: token ${GITHUB_TOKEN}" \
-    -H "Accept: application/vnd.github.v3+json" \
-    2>/dev/null \
-  | grep '"content"' | head -1 \
-  | sed 's/.*"content"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' \
-  | tr -d '\\n' || true
+    -H "Accept: application/vnd.github.v3+json" 2>/dev/null \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('content','').replace('\n',''))" 2>/dev/null || true
 }
 
-# ─── Helper: upload to target repo ───────────────────────────────
-upload_to_repo() {
-  local REPO="$1" DST_PATH="$2" CONTENT_B64="$3" MSG="$4"
+upload_b64() {
+  local REPO="$1" FPATH="$2" B64="$3" MSG="$4"
   local SHA
-  SHA=$(get_sha "$REPO" "$DST_PATH")
+  SHA=$(get_sha "$REPO" "$FPATH")
 
   local PAYLOAD
-  if [[ -n "$SHA" ]]; then
-    PAYLOAD="{\"message\":\"${MSG}\",\"content\":\"${CONTENT_B64}\",\"sha\":\"${SHA}\"}"
-  else
-    PAYLOAD="{\"message\":\"${MSG}\",\"content\":\"${CONTENT_B64}\"}"
-  fi
+  PAYLOAD=$(python3 -c "
+import json, sys
+d = {'message': sys.argv[1], 'content': sys.argv[2]}
+if sys.argv[3]: d['sha'] = sys.argv[3]
+print(json.dumps(d))
+" "$MSG" "$B64" "$SHA")
 
-  local RESULT
-  RESULT=$(curl -sf -X PUT \
-    "https://api.github.com/repos/${OWNER}/${REPO}/contents/${DST_PATH}" \
+  local HTTP_CODE
+  HTTP_CODE=$(curl -sf -o /tmp/gh_result.json -w "%{http_code}" \
+    -X PUT "https://api.github.com/repos/${OWNER}/${REPO}/contents/${FPATH}" \
     -H "Authorization: token ${GITHUB_TOKEN}" \
     -H "Accept: application/vnd.github.v3+json" \
     -H "Content-Type: application/json" \
-    -d "$PAYLOAD" 2>/dev/null \
-    | grep '"name"' | head -1 | sed 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)
+    -d "$PAYLOAD" 2>/dev/null || echo "000")
 
-  if [[ -n "$RESULT" ]]; then
-    ok "${REPO}/${DST_PATH}"
+  if [[ "$HTTP_CODE" =~ ^(200|201)$ ]]; then
+    local SHA8
+    SHA8=$(python3 -c "import json; d=json.load(open('/tmp/gh_result.json')); print(d.get('content',{}).get('sha','?')[:8])" 2>/dev/null || echo "?")
+    ok "${REPO}/${FPATH}  (sha: ${SHA8})"
+    TOTAL_OK=$((TOTAL_OK+1))
     return 0
   else
-    err "${REPO}/${DST_PATH} — gagal upload"
+    local ERRMSG
+    ERRMSG=$(python3 -c "import json; d=json.load(open('/tmp/gh_result.json')); print(d.get('message','HTTP ${HTTP_CODE}'))" 2>/dev/null || echo "HTTP ${HTTP_CODE}")
+    err "${REPO}/${FPATH}  --  ${ERRMSG}"
+    TOTAL_ERR=$((TOTAL_ERR+1))
     return 1
   fi
 }
 
-# ─── Helper: sync satu file DC → target ──────────────────────────
 sync_file() {
-  local SRC_PATH="$1" REPO="$2" DST_PATH="${3:-$1}"
-  local MSG="$4"
-  info "Syncing ${SRC_PATH} → ${REPO}/${DST_PATH}..."
+  local SRC="$1" DST_REPO="$2" DST="$3" MSG="$4"
+  local BRAND_FROM="${5:-}" BRAND_TO="${6:-}"
+  info "devculture-vps/${SRC}  ->  ${DST_REPO}/${DST}"
 
   local B64
-  B64=$(get_dc_content_b64 "$SRC_PATH")
+  B64=$(get_dc_b64 "$SRC")
   if [[ -z "$B64" ]]; then
-    err "Gagal ambil konten dari devculture-vps/${SRC_PATH}"
-    return 1
+    warn "Gagal ambil ${SRC} dari devculture-vps -- dilewati"
+    TOTAL_SKIP=$((TOTAL_SKIP+1))
+    return 0
   fi
-  upload_to_repo "$REPO" "$DST_PATH" "$B64" "$MSG"
+
+  if [[ -n "$BRAND_FROM" && -n "$BRAND_TO" ]]; then
+    B64=$(echo "$B64" | base64 -d \
+      | sed "s|${BRAND_FROM}|${BRAND_TO}|g" \
+      | base64 -w 0)
+  fi
+
+  upload_b64 "$DST_REPO" "$DST" "$B64" "$MSG"
 }
 
-# ─── Helper: upload file lokal → repo ────────────────────────────
 upload_local() {
-  local LOCAL="$1" REPO="$2" DST_PATH="$3" MSG="$4"
+  local LOCAL="$1" DST_REPO="$2" DST="$3" MSG="$4"
+  if [[ ! -f "$LOCAL" ]]; then
+    warn "File lokal tidak ditemukan: $LOCAL -- dilewati"
+    TOTAL_SKIP=$((TOTAL_SKIP+1))
+    return 0
+  fi
   local B64
   B64=$(base64 -w 0 "$LOCAL")
-  upload_to_repo "$REPO" "$DST_PATH" "$B64" "$MSG"
+  upload_b64 "$DST_REPO" "$DST" "$B64" "$MSG"
 }
 
 # ================================================================
-# BANNER
-# ================================================================
-clear
-echo -e "${CYAN}${BOLD}"
-echo "  ╔══════════════════════════════════════════════╗"
-echo "  ║   DevCulture VPS — Cross-Repo Sync  v1.0    ║"
-echo "  ║   github.com/tuyulbodo99/devculture-vps      ║"
-echo "  ╚══════════════════════════════════════════════╝"
-echo -e "${NC}"
-echo "  Token : ${GITHUB_TOKEN:0:8}***"
-echo "  Date  : $(date '+%Y-%m-%d %H:%M %Z')"
+echo ""
+echo -e "${CYAN}${BOLD}DevCulture VPS -- Cross-Repo Sync v1.1.0${NC}"
+echo -e "  github.com/tuyulbodo99/devculture-vps"
+[[ "${GITHUB_ACTIONS:-}" == "true" ]] && echo "  Berjalan di: GitHub Actions" || echo "  Berjalan di: local shell"
+echo "  Waktu: $(date -u '+%Y-%m-%d %H:%M UTC')"
 echo ""
 
-TOTAL_OK=0; TOTAL_ERR=0
-
 # ================================================================
-# SYNC: devculture-vps → hokagescript
+#  SYNC: devculture-vps -> hokagescript
 # ================================================================
-head_msg "[ hokagescript ]  Syncing shared scripts..."
+section "hokagescript -- file bersama (websocket, lib)"
 
-declare -A SYNC_MAP=(
-  # websocket — identik
-  ["websocket/insshws.sh"]="websocket/insshws.sh"
-  # xray — shared base (ins-xray.sh pakai path hokagescript sendiri)
-  # update scripts — bisa langsung dipakai
-  ["update/update-devculture.sh"]="update/update-devculture.sh"
-  ["lib/utils.sh"]="lib/utils.sh"
-)
+sync_file "websocket/insshws.sh" "hokagescript" "websocket/insshws.sh" \
+  "sync: update dari devculture-vps/main [auto]" \
+  "tuyulbodo99/devculture-vps" "tuyulbodo99/hokagescript"
+sleep 0.4
 
-for SRC in "${!SYNC_MAP[@]}"; do
-  DST="${SYNC_MAP[$SRC]}"
-  if sync_file "$SRC" "hokagescript" "$DST" "sync: update ${DST} dari devculture-vps"; then
-    TOTAL_OK=$((TOTAL_OK + 1))
-  else
-    TOTAL_ERR=$((TOTAL_ERR + 1))
-  fi
-  sleep 0.3
-done
+sync_file "lib/utils.sh" "hokagescript" "lib/utils.sh" \
+  "sync: update lib/utils.sh dari devculture-vps/main [auto]" \
+  "tuyulbodo99/devculture-vps" "tuyulbodo99/hokagescript"
+sleep 0.4
 
-# Upload file yang sudah dipatch khusus untuk hokagescript
-head_msg "[ hokagescript ]  Upload patched files..."
+section "hokagescript -- patch ssh-vpn.sh (fix ANU, sed, URL)"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HOKAGE_SSH_VPN="${SCRIPT_DIR}/scripts/hokagescript/ssh-vpn.sh"
-HOKAGE_SETUP="${SCRIPT_DIR}/scripts/hokagescript/setup.sh"
-
-# Jika file patch tersedia secara lokal
-if [[ -f "$HOKAGE_SSH_VPN" ]]; then
-  if upload_local "$HOKAGE_SSH_VPN" "hokagescript" "ssh/ssh-vpn.sh" \
-    "fix: ssh-vpn.sh — hapus \$ANU undefined, perbaiki sed tanpa file target, fix URL"; then
-    TOTAL_OK=$((TOTAL_OK + 1))
-  else
-    TOTAL_ERR=$((TOTAL_ERR + 1))
-  fi
+TMP_SSH=$(mktemp /tmp/hk-ssh-XXXXX.sh)
+B64_SSH=$(get_dc_b64 "ssh/ssh-vpn.sh")
+if [[ -n "$B64_SSH" ]]; then
+  echo "$B64_SSH" | base64 -d \
+    | sed 's|tuyulbodo99/devculture-vps|tuyulbodo99/hokagescript|g' \
+    | sed 's|organization=DevCulture|organization=HOKAGE|g' \
+    | sed 's|organizationalunit=DevCulture|organizationalunit=HOKAGE|g' \
+    | sed 's|commonname=devculture.id|commonname=none|g' \
+    | sed 's|email=admin@devculture.id|email=hokagelegend99@gmail.com|g' \
+    > "$TMP_SSH"
+  upload_local "$TMP_SSH" "hokagescript" "ssh/ssh-vpn.sh" \
+    "fix: ssh-vpn.sh -- hapus ANU undefined, perbaiki sed tanpa file target [auto]"
 else
-  # Fallback: ambil dari devculture-vps dan patch on-the-fly
-  info "Patching hokagescript/ssh/ssh-vpn.sh on-the-fly..."
-  TMP_SSH=$(mktemp /tmp/hk-ssh-XXXXX.sh)
-  curl -fsSL "${DC_BASE}/ssh/ssh-vpn.sh" -o "$TMP_SSH" 2>/dev/null || \
-    wget -qO "$TMP_SSH" "${DC_BASE}/ssh/ssh-vpn.sh" 2>/dev/null
-  # Ganti branding devculture → hokagescript
-  sed -i 's|tuyulbodo99/devculture-vps|tuyulbodo99/hokagescript|g' "$TMP_SSH"
-  sed -i 's|organization=DevCulture|organization=HOKAGE|g' "$TMP_SSH"
-  sed -i 's|organizationalunit=DevCulture|organizationalunit=HOKAGE|g' "$TMP_SSH"
-  sed -i 's|email=admin@devculture.id|email=hokagelegend99@gmail.com|g' "$TMP_SSH"
-  if upload_local "$TMP_SSH" "hokagescript" "ssh/ssh-vpn.sh" \
-    "fix: ssh-vpn.sh — hapus \$ANU undefined, perbaiki sed tanpa file target"; then
-    TOTAL_OK=$((TOTAL_OK + 1))
-  else
-    TOTAL_ERR=$((TOTAL_ERR + 1))
-  fi
-  rm -f "$TMP_SSH"
+  warn "Gagal mengambil ssh/ssh-vpn.sh dari devculture-vps"
+  TOTAL_SKIP=$((TOTAL_SKIP+1))
 fi
-sleep 0.3
+rm -f "$TMP_SSH"
+sleep 0.4
 
-if [[ -f "$HOKAGE_SETUP" ]]; then
-  if upload_local "$HOKAGE_SETUP" "hokagescript" "setup.sh" \
-    "fix: setup.sh — hapus PERMISSION undefined, ganti URL dari hokagelegend9999/original"; then
-    TOTAL_OK=$((TOTAL_OK + 1))
-  else
-    TOTAL_ERR=$((TOTAL_ERR + 1))
-  fi
+section "hokagescript -- patch setup.sh (hapus PERMISSION, fix URL)"
+
+TMP_SETUP=$(mktemp /tmp/hk-setup-XXXXX.sh)
+B64_SETUP=$(get_dc_b64 "setup.sh")
+if [[ -n "$B64_SETUP" ]]; then
+  echo "$B64_SETUP" | base64 -d \
+    | sed 's|tuyulbodo99/devculture-vps|tuyulbodo99/hokagescript|g' \
+    | sed 's|DevCulture VPS|HokageScript VPS|g' \
+    | sed 's|@devculturebot|@hokagelegend|g' \
+    > "$TMP_SETUP"
+  upload_local "$TMP_SETUP" "hokagescript" "setup.sh" \
+    "fix: setup.sh -- hapus PERMISSION undefined, ganti URL dari hokagelegend9999/original [auto]"
 else
-  info "Patching hokagescript/setup.sh on-the-fly..."
-  TMP_SETUP=$(mktemp /tmp/hk-setup-XXXXX.sh)
-  curl -fsSL "${DC_BASE}/setup.sh" -o "$TMP_SETUP" 2>/dev/null || \
-    wget -qO "$TMP_SETUP" "${DC_BASE}/setup.sh" 2>/dev/null
-  sed -i 's|tuyulbodo99/devculture-vps|tuyulbodo99/hokagescript|g' "$TMP_SETUP"
-  sed -i 's|DevCulture VPS|HokageScript VPS|g' "$TMP_SETUP"
-  if upload_local "$TMP_SETUP" "hokagescript" "setup.sh" \
-    "fix: setup.sh — hapus PERMISSION undefined, ganti URL dari hokagelegend9999/original"; then
-    TOTAL_OK=$((TOTAL_OK + 1))
-  else
-    TOTAL_ERR=$((TOTAL_ERR + 1))
-  fi
-  rm -f "$TMP_SETUP"
+  warn "Gagal mengambil setup.sh dari devculture-vps"
+  TOTAL_SKIP=$((TOTAL_SKIP+1))
 fi
-sleep 0.3
+rm -f "$TMP_SETUP"
 
 # ================================================================
-# RINGKASAN
+#  RINGKASAN
 # ================================================================
 echo ""
-echo -e "  ${CYAN}══════════════════════════════════════════════${NC}"
-echo -e "  ${BOLD}Hasil Sync${NC}"
-echo -e "  ${GREEN}✔ Berhasil${NC} : ${TOTAL_OK}"
+echo -e "  ${CYAN}================================================${NC}"
+echo -e "  ${BOLD}Berhasil${NC} : ${GREEN}${TOTAL_OK}${NC}"
 if [[ $TOTAL_ERR -gt 0 ]]; then
-  echo -e "  ${RED}✘ Gagal${NC}    : ${TOTAL_ERR}"
+  echo -e "  ${BOLD}Gagal${NC}    : ${RED}${TOTAL_ERR}${NC}"
 else
-  echo -e "  Gagal    : 0"
+  echo -e "  ${BOLD}Gagal${NC}    : 0"
 fi
-echo -e "  ${CYAN}══════════════════════════════════════════════${NC}"
+echo -e "  ${BOLD}Dilewati${NC} : ${TOTAL_SKIP}"
+echo -e "  ${CYAN}================================================${NC}"
 echo ""
+
+notice "Sync selesai: ${TOTAL_OK} berhasil, ${TOTAL_ERR} gagal, ${TOTAL_SKIP} dilewati"
 
 [[ $TOTAL_ERR -gt 0 ]] && exit 1 || exit 0
