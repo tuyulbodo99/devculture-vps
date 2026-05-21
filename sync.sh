@@ -1,21 +1,32 @@
 #!/bin/bash
 # =================================================================
-#   DevCulture VPS — Central Sync & Auto-Update System v1.0.0
+#   DevCulture VPS — Central Sync & Auto-Update System v1.1.0
 #   Menghubungkan & menyinkronkan semua komponen DevCulture
 #   github.com/tuyulbodo99 | @devculturebot
 # =================================================================
 set -euo pipefail
 
 RESET="\033[0m"; BOLD="\033[1m"; DIM="\033[2m"
-BBLUE="\033[1;34m"; BCYAN="\033[1;36m"; BGREEN="\033[1;32m"
+BCYAN="\033[1;36m"; BGREEN="\033[1;32m"
 BYELLOW="\033[1;33m"; BRED="\033[1;31m"; BPURPLE="\033[1;35m"
 BWHITE="\033[1;37m"
 
-DC_VERSION="1.0.0"
+DC_VERSION="1.1.0"
 BASE="https://raw.githubusercontent.com/tuyulbodo99"
-LOG="/var/log/devculture-sync.log"
-SYNC_DIR="/etc/devculture/sync"
 LOCK="/tmp/dc-sync.lock"
+
+# ── Setup path berdasarkan root/non-root ─────────────────────────
+if [[ $EUID -eq 0 ]]; then
+  LOG="/var/log/devculture-sync.log"
+  SYNC_DIR="/etc/devculture/sync"
+  IJIN_DB="/etc/devculture/ijin.db"
+  CRON_FILE="/etc/cron.d/devculture-sync"
+else
+  LOG="/tmp/devculture-sync.log"
+  SYNC_DIR="$HOME/.devculture/sync"
+  IJIN_DB="$HOME/.devculture/ijin.db"
+  CRON_FILE=""
+fi
 
 # ── Daftar komponen yang disinkronkan ────────────────────────────
 COMP_NAMES=(
@@ -46,15 +57,17 @@ COMP_DSTS=(
   "/usr/local/bin/dc-update"
 )
 
+# ── Init direktori dan log ────────────────────────────────────────
 mkdir -p "$SYNC_DIR" 2>/dev/null || true
+touch "$LOG" 2>/dev/null || LOG="/tmp/devculture-sync.log" && touch "$LOG"
 
 # ── Cek lock ─────────────────────────────────────────────────────
 if [[ -f "$LOCK" ]]; then
-  echo -e "${BRED}[ERROR]${RESET} Sync sedang berjalan (lock: $LOCK). Keluar."
+  echo -e "${BRED}[ERROR]${RESET} Sync sedang berjalan (lock: $LOCK). Keluar." >&2
   exit 1
 fi
 touch "$LOCK"
-trap "rm -f $LOCK" EXIT
+trap "rm -f '$LOCK'" EXIT
 
 # ── Banner ────────────────────────────────────────────────────────
 banner() {
@@ -78,16 +91,77 @@ warn()    { echo -e "  ${BYELLOW}[WARN]${RESET}    $*"; }
 error()   { echo -e "  ${BRED}[ERROR]${RESET}   $*"; }
 step()    { echo -e "  ${BPURPLE}[SYNC]${RESET}    $*"; }
 
+# FIX #6: Validasi file tidak kosong setelah download
 safe_dl() {
   local url="$1" dst="$2"
-  curl -fsSL --max-time 30 "$url" -o "$dst" 2>/dev/null \
-    || wget -qO "$dst" "$url" 2>/dev/null \
-    || return 1
+  local tmp; tmp=$(mktemp /tmp/dc-dl-XXXXX)
+  if curl -fsSL --max-time 30 "$url" -o "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+    mv "$tmp" "$dst"
+    return 0
+  elif command -v wget >/dev/null 2>&1 && wget -qO "$tmp" "$url" 2>/dev/null && [[ -s "$tmp" ]]; then
+    mv "$tmp" "$dst"
+    return 0
+  else
+    rm -f "$tmp"
+    return 1
+  fi
 }
 
 check_internet() {
-  curl -fsSL --max-time 5 https://google.com >/dev/null 2>&1 \
-    || { error "Tidak ada koneksi internet!"; exit 1; }
+  if ! curl -fsSL --max-time 5 https://github.com >/dev/null 2>&1; then
+    error "Tidak ada koneksi internet! Script dihentikan."
+    exit 1
+  fi
+  success "Koneksi internet OK"
+}
+
+# FIX #2: Root check dengan pesan jelas
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    echo ""
+    echo -e "  ${BYELLOW}╔══════════════════════════════════════════════════╗${RESET}"
+    echo -e "  ${BYELLOW}║${RESET}  ${BRED}${BOLD}PERINGATAN: Script dijalankan tanpa root!${RESET}      ${BYELLOW}║${RESET}"
+    echo -e "  ${BYELLOW}║${RESET}  Instalasi komponen ke /usr/local/bin akan GAGAL ${BYELLOW}║${RESET}"
+    echo -e "  ${BYELLOW}║${RESET}  Jalankan dengan: ${BWHITE}sudo bash sync.sh${RESET}              ${BYELLOW}║${RESET}"
+    echo -e "  ${BYELLOW}╚══════════════════════════════════════════════════╝${RESET}"
+    echo ""
+    read -rp "  Tetap lanjutkan? (beberapa fitur tidak akan berfungsi) [y/N]: " CONFIRM
+    [[ "${CONFIRM,,}" == "y" ]] || exit 0
+  fi
+}
+
+# ── Sync database ijin ────────────────────────────────────────────
+sync_permissions() {
+  step "Memperbarui database ijin dari tuyulbodo99/ijin..."
+  local IJIN_URL="${BASE}/ijin/main/youtube"
+  mkdir -p "$(dirname "$IJIN_DB")" 2>/dev/null || true
+  if safe_dl "$IJIN_URL" "$IJIN_DB"; then
+    success "Database ijin berhasil diperbarui → ${DIM}${IJIN_DB}${RESET}"
+  else
+    warn "Gagal memperbarui database ijin (akan gunakan cache lama)"
+  fi
+}
+
+# ── Validasi ijin VPS ini ─────────────────────────────────────────
+check_permission() {
+  step "Validasi ijin VPS ini..."
+  local MYIP; MYIP=$(curl -sS --max-time 5 ipv4.icanhazip.com 2>/dev/null \
+    || curl -sS --max-time 5 ifconfig.me 2>/dev/null \
+    || hostname -I 2>/dev/null | awk '{print $1}' \
+    || echo "unknown")
+  local IZIN=""
+  if [[ -f "$IJIN_DB" ]]; then
+    IZIN=$(awk '{print $4}' "$IJIN_DB" | grep -w "$MYIP" 2>/dev/null || true)
+  else
+    IZIN=$(curl -sS --max-time 10 "${BASE}/ijin/main/youtube" 2>/dev/null \
+      | awk '{print $4}' | grep -w "$MYIP" 2>/dev/null || true)
+  fi
+  if [[ -n "$IZIN" ]]; then
+    success "VPS terotorisasi: ${BWHITE}${MYIP}${RESET}"
+  else
+    warn "VPS tidak terdaftar: ${BYELLOW}${MYIP}${RESET}"
+    info "Hubungi admin untuk mendaftarkan VPS Anda"
+  fi
 }
 
 # ── Sync satu komponen ────────────────────────────────────────────
@@ -97,50 +171,27 @@ sync_component() {
   step "Syncing: ${BWHITE}${name}${RESET}"
   if safe_dl "$url" "$tmp"; then
     chmod +x "$tmp"
-    mkdir -p "$(dirname "$dst")"
-    mv "$tmp" "$dst"
-    echo "$(date '+%Y-%m-%d %H:%M:%S') SYNCED $name -> $dst" >> "$SYNC_DIR/sync.log"
-    success "$name diperbarui → ${DIM}$dst${RESET}"
+    mkdir -p "$(dirname "$dst")" 2>/dev/null || true
+    if mv "$tmp" "$dst" 2>/dev/null; then
+      echo "$(date '+%Y-%m-%d %H:%M:%S') SYNCED $name -> $dst" >> "$SYNC_DIR/sync.log" 2>/dev/null || true
+      success "$name diperbarui → ${DIM}$dst${RESET}"
+    else
+      warn "$name gagal dipindahkan ke $dst (perlu root?)"
+      rm -f "$tmp"
+    fi
   else
-    warn "$name gagal diunduh, skip."
+    warn "$name gagal diunduh (URL tidak tersedia), skip."
     rm -f "$tmp"
   fi
 }
 
-# ── Sync database ijin ────────────────────────────────────────────
-sync_permissions() {
-  step "Memperbarui database ijin dari tuyulbodo99/ijin..."
-  local tmp; tmp=$(mktemp /tmp/dc-ijin-XXXXX)
-  local IJIN_URL="${BASE}/ijin/main/youtube"
-  if safe_dl "$IJIN_URL" "$tmp"; then
-    mkdir -p /etc/devculture
-    mv "$tmp" /etc/devculture/ijin.db
-    success "Database ijin berhasil diperbarui"
-  else
-    warn "Gagal memperbarui database ijin"
-    rm -f "$tmp"
-  fi
-}
-
-# ── Validasi ijin VPS ini ─────────────────────────────────────────
-check_permission() {
-  step "Validasi ijin VPS ini..."
-  local MYIP; MYIP=$(curl -sS ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')
-  local IJIN_URL="${BASE}/ijin/main/youtube"
-  local IZIN; IZIN=$(curl -sS "$IJIN_URL" 2>/dev/null | awk '{print $4}' | grep -w "$MYIP" || true)
-  if [[ "$MYIP" == "$IZIN" ]]; then
-    success "VPS terotorisasi: ${BWHITE}${MYIP}${RESET}"
-    return 0
-  else
-    warn "VPS tidak terdaftar di ijin: ${BYELLOW}${MYIP}${RESET}"
-    info "Hubungi admin untuk mendaftarkan VPS Anda"
-    return 1
-  fi
-}
-
-# ── Install cron auto-sync harian ────────────────────────────────
+# FIX #4: install_cron dengan error handling ─────────────────────
 install_cron() {
-  local CRON_FILE="/etc/cron.d/devculture-sync"
+  if [[ $EUID -ne 0 ]]; then
+    warn "Cron otomatis tidak dapat dipasang tanpa root. Skip."
+    info "Jalankan manual: sudo bash sync.sh untuk install cron"
+    return 0
+  fi
   if [[ ! -f "$CRON_FILE" ]]; then
     cat > "$CRON_FILE" << CRONEOF
 SHELL=/bin/bash
@@ -148,7 +199,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 0 3 * * * root bash <(curl -fsSL ${BASE}/devculture-vps/main/sync.sh) --cron >> $LOG 2>&1
 CRONEOF
     chmod 644 "$CRON_FILE"
-    success "Cron auto-sync terpasang (setiap hari pukul 03:00)"
+    success "Cron auto-sync terpasang: setiap hari pukul 03:00"
+    info "File cron: $CRON_FILE"
   else
     info "Cron sudah terpasang di $CRON_FILE"
   fi
@@ -167,8 +219,8 @@ status_report() {
     "/usr/local/bin/ssl-renew.sh:SSL Renewer"
     "/usr/local/sbin/menu:VPN Menu"
     "/usr/local/bin/dc-update:Update Script"
-    "/etc/devculture/ijin.db:Ijin Database"
-    "/etc/cron.d/devculture-sync:Auto-Sync Cron"
+    "${IJIN_DB}:Ijin Database"
+    "${CRON_FILE:-/etc/cron.d/devculture-sync}:Auto-Sync Cron"
   )
   for entry in "${entries[@]}"; do
     local path="${entry%%:*}" label="${entry##*:}"
@@ -180,17 +232,23 @@ status_report() {
   done
   echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────┘${RESET}"
   echo ""
+  echo -e "  ${DIM}Log: $LOG${RESET}"
+  echo -e "  ${DIM}Root: $([ $EUID -eq 0 ] && echo 'Ya' || echo 'Tidak')${RESET}"
+  echo ""
 }
 
 # ── Main ──────────────────────────────────────────────────────────
+# FIX #1: Gunakan "$@" bukan "${@:-}"
 main() {
   local MODE="${1:-interactive}"
 
-  # Mode cron (silent)
+  # FIX #3: Mode cron — log ke file dengan fallback
   if [[ "$MODE" == "--cron" ]]; then
-    exec >> "$LOG" 2>&1
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [CRON] Memulai auto-sync..."
-    check_internet || exit 0
+    if [[ -w "$LOG" ]] || touch "$LOG" 2>/dev/null; then
+      exec >> "$LOG" 2>&1
+    fi
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [CRON] Memulai auto-sync v${DC_VERSION}..."
+    check_internet 2>/dev/null || { echo "$(date) [CRON] Tidak ada internet, batal."; exit 0; }
     sync_permissions
     for i in "${!COMP_NAMES[@]}"; do
       sync_component "${COMP_NAMES[$i]}" "${COMP_URLS[$i]}" "${COMP_DSTS[$i]}"
@@ -209,6 +267,7 @@ main() {
   # Mode interaktif
   banner
   check_internet
+  require_root
 
   echo -e "  ${BPURPLE}┌─────────────────────────────────────────────────────┐${RESET}"
   echo -e "  ${BPURPLE}│${RESET}  ${BOLD}Sinkronisasi semua komponen DevCulture${RESET}              ${BPURPLE}│${RESET}"
@@ -217,8 +276,8 @@ main() {
   echo -e "  ${BPURPLE}└─────────────────────────────────────────────────────┘${RESET}"
   echo ""
 
-  check_permission || true
   sync_permissions
+  check_permission
 
   echo ""
   info "Menyinkronkan ${#COMP_NAMES[@]} komponen..."
@@ -233,10 +292,10 @@ main() {
   echo ""
   echo -e "  ${BPURPLE}══════════════════════════════════════════════════════${RESET}"
   echo -e "  ${BGREEN}${BOLD}  ✔  Sinkronisasi selesai!${RESET}"
-  echo -e "  ${DIM}  Log tersimpan di: $LOG${RESET}"
+  echo -e "  ${DIM}  Log: $LOG${RESET}"
   echo -e "  ${BPURPLE}══════════════════════════════════════════════════════${RESET}"
   echo ""
   status_report
 }
 
-main "${@:-}"
+main "$@"
