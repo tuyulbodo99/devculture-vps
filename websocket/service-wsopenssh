@@ -1,6 +1,6 @@
 [Unit]
-Description=Websocket-OpenSSH By HOKAGE LEGEND
-Documentation=https://minato.hokagelegend.my.id
+Description=Websocket-OpenSSH By DevCulture
+Documentation=https://github.com/tuyulbodo99
 After=network.target nss-lookup.target
 
 [Service]
