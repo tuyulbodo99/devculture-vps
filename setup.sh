@@ -335,8 +335,8 @@ echo "   - Backup & Restore Data" | tee -a log-install.txt
 echo "   - Full Orders For Various Services" | tee -a log-install.txt
 echo ""  | tee -a log-install.txt
 echo "   >>> About " | tee -a log-install.txt
-echo "   - Script Presented By      : devculture VPN STORE" | tee -a log-install.txt" | tee -a log-install.txt
-echo "   - Contact (Only Text)      : wa.me/087726917005" | tee -a log-install.txt" | tee -a log-install.txt
+echo "   - Script Presented By      : devculture VPN STORE" | tee -a log-install.txt
+echo "   - Contact (Only Text)      : wa.me/087726917005" | tee -a log-install.txt
 echo "------------------------------------------------------------"
 echo ""
 echo "=============-[ DevCulture ]-==============="
