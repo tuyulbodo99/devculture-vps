@@ -1,28 +1,38 @@
 #!/bin/bash
-dateFromServer=$(curl -v --insecure --silent https://google.com/ 2>&1 | grep Date | sed -e 's/< Date: //')
-biji=`date +"%Y-%m-%d" -d "$dateFromServer"`
-###########- COLOR CODE -##############
-echo -e " [INFO] Downloading Update File"
-sleep 2
-wget -q -O /usr/bin/menu "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu.sh" && chmod +x /usr/bin/menu
-wget -q -O /usr/bin/menu-ss "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-ss.sh" && chmod +x /usr/bin/menu-ss
-wget -q -O /usr/bin/menu-vmess "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-vmess.sh" && chmod +x /usr/bin/menu-vmess
-wget -q -O /usr/bin/menu-vless "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-vless.sh" && chmod +x /usr/bin/menu-vless
-wget -q -O /usr/bin/menu-trojan "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-trojan.sh" && chmod +x /usr/bin/menu-trojan
-wget -q -O /usr/bin/menu-bot "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-bot.sh" && chmod +x /usr/bin/menu-bot
-wget -q -O /usr/bin/menu-ssh "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-ssh.sh" && chmod +x /usr/bin/menu-ssh
-wget -q -O /usr/bin/menu-set "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-set.sh" && chmod +x /usr/bin/menu-set
-wget -q -O /usr/bin/menu-theme "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-theme.sh" && chmod +x /usr/bin/menu-theme
-wget -q -O /usr/bin/menu-backup "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-backup.sh" && chmod +x /usr/bin/menu-backup
-wget -q -O /usr/bin/menu-ip "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-ip.sh" && chmod +x /usr/bin/menu-ip
-wget -q -O /usr/bin/menu-tor "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-tor.sh" && chmod +x /usr/bin/menu-tor
-wget -q -O /usr/bin/autoboot "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/autoboot.sh" && chmod +x /usr/bin/autoboot
-wget -q -O /usr/bin/menu-tcp "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-tcp.sh" && chmod +x /usr/bin/menu-tcp
-wget -q -O /usr/bin/rebootvps "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/corn/rebootvps.sh" && chmod +x /usr/bin/rebootvps
-wget -q -O /usr/bin/menu-dns "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-dns.sh" && chmod +x /usr/bin/menu-dns
-wget -q -O /usr/bin/info "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/info.sh" && chmod +x /usr/bin/info
-wget -q -O /usr/bin/mspeed "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-speedtest.sh" && chmod +x /usr/bin/mspeed
-wget -q -O /usr/bin/mbandwith "https://raw.githubusercontent.com/tuyulbodo99/original/main/update/menu-bandwith.sh" && chmod +x /usr/bin/mbandwith
+# =================================================================
+#   DevCulture VPS — Update All Scripts  v3.2.0
+#   github.com/tuyulbodo99/devculture-vps | @devculturebot
+# =================================================================
+BASE_URL="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main"
+
+green()  { echo -e "\033[32;1m${*}\033[0m"; }
+yellow() { echo -e "\033[33;1m${*}\033[0m"; }
+
+safe_dl() {
+  local URL="$1" OUT="$2"
+  wget -qO "$OUT" "$URL" 2>/dev/null && return 0
+  curl -fsSL "$URL" -o "$OUT" 2>/dev/null && return 0
+  return 1
+}
+
+echo -e " [INFO] Downloading Update Files..."
+sleep 1
+
+for SCRIPT in menu.sh menu-ssh.sh menu-bot.sh menu-backup.sh menu-dns.sh menu-ip.sh \
+              menu-set.sh menu-speedtest.sh menu-vmess.sh menu-vless.sh menu-trojan.sh \
+              menu-ss.sh menu-tcp.sh menu-tor.sh menu-theme.sh menu-bandwith.sh \
+              autoboot.sh info.sh; do
+  NAME="${SCRIPT%.sh}"
+  if safe_dl "${BASE_URL}/update/${SCRIPT}" "/usr/bin/${NAME}"; then
+    chmod +x "/usr/bin/${NAME}"
+  fi
+done
+
+safe_dl "${BASE_URL}/update/menu.sh"       "/usr/local/sbin/menu" && chmod +x /usr/local/sbin/menu   || true
+safe_dl "${BASE_URL}/corn/rebootvps.sh"    "/usr/bin/rebootvps"   && chmod +x /usr/bin/rebootvps     || true
+safe_dl "${BASE_URL}/update/info.sh"       "/usr/bin/info"        && chmod +x /usr/bin/info           || true
+safe_dl "${BASE_URL}/update/menu-speedtest.sh" "/usr/bin/mspeed"  && chmod +x /usr/bin/mspeed         || true
+safe_dl "${BASE_URL}/update/menu-bandwith.sh"  "/usr/bin/mbandwith" && chmod +x /usr/bin/mbandwith   || true
+
 echo -e " [INFO] Update Successfully"
-sleep 2
-exit
+sleep 1
