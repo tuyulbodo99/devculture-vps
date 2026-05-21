@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="44" viewBox="0 0 220 44">
+  <!-- Outer glow pulse -->
+  <circle cx="22" cy="22" r="16" fill="#00E676" opacity="0.15">
+    <animate attributeName="r"       values="14;20;14" dur="1.6s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.2;0;0.2" dur="1.6s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Mid ring pulse -->
+  <circle cx="22" cy="22" r="11" fill="#00E676" opacity="0.35">
+    <animate attributeName="r"       values="9;14;9" dur="1.6s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.45;0.05;0.45" dur="1.6s" repeatCount="indefinite"/>
+  </circle>
+  <!-- Solid core -->
+  <circle cx="22" cy="22" r="7" fill="#00E676"/>
+  <!-- Label -->
+  <text x="42" y="28" font-family="'JetBrains Mono','Courier New',monospace"
+        font-size="15" font-weight="bold" fill="#00E676" letter-spacing="1">NGINX ONLINE</text>
+</svg>
