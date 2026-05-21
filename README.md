@@ -1,113 +1,79 @@
 <div align="center">
 
-<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=700&size=28&pause=1000&color=9B59B6&center=true&vCenter=true&width=700&lines=DevCulture+VPS;Premium+All-in-One+VPS+Suite;Built+by+tuyulbodo99" alt="Typing SVG" />
+<img src="https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/assets/cyberpunk-typing.png" width="100%" alt="DevCulture VPS - Cyberpunk Hacker" />
 
 <br/>
 
-[![Version](https://img.shields.io/badge/version-3.2.0-9b59b6?style=for-the-badge&logo=git&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
-[![Shell](https://img.shields.io/badge/shell-bash-1a1a2e?style=for-the-badge&logo=gnubash&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
-[![OS](https://img.shields.io/badge/OS-Ubuntu%20%7C%20Debian-2c2c54?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/tuyulbodo99/devculture-vps)
-[![Sync](https://img.shields.io/badge/ecosystem-connected-5b2c6f?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/tuyulbodo99)
+[![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=700&size=28&pause=1000&color=A855F7&center=true&vCenter=true&width=600&lines=DevCulture+VPS+Store;Premium+SSH+%2B+WebSocket+Panel;Ubuntu+22.04+Ready;Auto+Update+%7C+Multi+Protocol)](https://git.io/typing-svg)
 
-```
-██████╗ ███████╗██╗   ██╗ ██████╗██╗   ██╗██╗  ████████╗██╗   ██╗██████╗ ███████╗
-██╔══██╗██╔════╝██║   ██║██╔════╝██║   ██║██║  ╚══██╔══╝██║   ██║██╔══██╗██╔════╝
-██║  ██║█████╗  ██║   ██║██║     ██║   ██║██║     ██║   ██║   ██║██████╔╝█████╗
-██║  ██║██╔══╝  ╚██╗ ██╔╝██║     ██║   ██║██║     ██║   ██║   ██║██╔══██╗██╔══╝
-██████╔╝███████╗ ╚████╔╝ ╚██████╗╚██████╔╝███████╗██║   ╚██████╔╝██║  ██║███████╗
-╚═════╝ ╚══════╝  ╚═══╝   ╚═════╝ ╚═════╝ ╚══════╝╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝
-```
+<br/>
 
-**Premium VPS Management Suite — Powerful. Automated. Yours.**
+![GitHub Stars](https://img.shields.io/github/stars/tuyulbodo99/devculture-vps?style=for-the-badge&color=a855f7&labelColor=0d0d0d)
+![GitHub Forks](https://img.shields.io/github/forks/tuyulbodo99/devculture-vps?style=for-the-badge&color=7c3aed&labelColor=0d0d0d)
+![Platform](https://img.shields.io/badge/Platform-Ubuntu%2022.04-a855f7?style=for-the-badge&logo=ubuntu&logoColor=white&labelColor=0d0d0d)
+![Shell](https://img.shields.io/badge/Shell-Bash%205-7c3aed?style=for-the-badge&logo=gnubash&logoColor=white&labelColor=0d0d0d)
+![License](https://img.shields.io/badge/License-MIT-a855f7?style=for-the-badge&labelColor=0d0d0d)
 
 </div>
 
 ---
 
-## ⚡ Install — Satu Perintah, Langsung Jalan
+<div align="center">
 
-> **Copy → Paste → Enter. Selesai.**
+### 🚀 ONE-CLICK INSTALL
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)
 ```
 
-### 🔄 Sync & Update Semua Komponen
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/sync.sh)
-```
-
-### 🛡️ Kelola Database Ijin (Admin)
-
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/ijin/main/check-ijin.sh)
-```
+</div>
 
 ---
 
-## 🟣 Overview
-
-**DevCulture VPS** adalah script manajemen VPS premium all-in-one yang mendukung SSH, Xray (VMess/VLess/Trojan), WebSocket, OpenVPN, Telegram Bot, SSL otomatis, dan sistem sinkronisasi terpusat di seluruh ekosistem DevCulture.
-
----
-
-## 🌐 Ekosistem DevCulture
-
-> Semua repo terhubung dan disinkronkan otomatis via **Central Sync System**
-
-| Repo | Fungsi | One-Click Install |
-|------|--------|-------------------|
-| [`devculture-vps`](https://github.com/tuyulbodo99/devculture-vps) | 🏠 Core — installer & panel utama | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)` |
-| [`hokagescript`](https://github.com/tuyulbodo99/hokagescript) | ⚙️ Menu & service scripts | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/hokagescript/main/setup.sh)` |
-| [`vpnscript`](https://github.com/tuyulbodo99/vpnscript) | 🔒 VPN installer lengkap | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/vpnscript/main/premi.sh)` |
-| [`vps-script`](https://github.com/tuyulbodo99/vps-script) | 🔧 SSH tunnel setup | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/vps-script/main/install)` |
-| [`ijin`](https://github.com/tuyulbodo99/ijin) | 🛡️ License & permission DB | `bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/ijin/main/check-ijin.sh)` |
-
----
-
-## 📦 Fitur Utama
+## 📦 Fitur Unggulan
 
 <table>
 <tr>
 <td width="50%">
 
-### 🔐 Protokol
-- SSH + WebSocket (port 80/443)
-- SSH SSL WebSocket
-- Dropbear (port 109/143)
-- Stunnel4 (port 447/777)
-- OpenVPN UDP
+**🔐 SSH & WebSocket**
+- OpenSSH (port 22)
+- Dropbear (port 109, 143)
+- SSH WebSocket HTTP (port 80)
+- SSH SSL WebSocket HTTPS (port 443)
+- Stunnel SSL Tunnel (port 777)
 
 </td>
 <td width="50%">
 
-### 🚀 Xray Core
-- VMess TLS / Non-TLS
-- VLess TLS / Non-TLS
-- Trojan WS + gRPC
-- Shadowsocks GRPC
+**⚡ Manajemen Akun**
+- Buat / Hapus / Perpanjang akun SSH
+- Output config WebSocket lengkap
+- Log otomatis ke `/root/dc-ssh-accounts.log`
+- Anti multi-login (max 2 sesi)
+- Auto-delete akun expired
 
 </td>
 </tr>
 <tr>
-<td>
+<td width="50%">
 
-### 🤖 Automation
-- Telegram Bot Manager
-- Auto SSL Renewal (Certbot)
-- Auto-Reboot Scheduler
-- Auto Kill Multi Login
-- Auto Delete Expired User
+**🛡️ Keamanan & Performa**
+- BBR TCP congestion control
+- Fail2ban anti brute-force
+- UFW firewall rules
+- SSL/TLS auto-renewal (Let's Encrypt)
+- IPv6 disabled by default
 
 </td>
-<td>
+<td width="50%">
 
-### 🔄 Sync System
-- Central auto-update harian (03:00)
-- Sinkronisasi antar semua repo
-- Database ijin terpusat
-- Log di `/var/log/devculture-sync.log`
+**🤖 Otomasi**
+- Sistem cron auto-sync & update
+- Telegram bot notifikasi
+- Backup & restore data
+- Sistem ijin/lisensi (github.com/tuyulbodo99/ijin)
+- Xray VLESS / VMess / Trojan
 
 </td>
 </tr>
@@ -115,57 +81,92 @@ bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/ijin/main/check-
 
 ---
 
-## 🛠️ Perintah Panel
+## 🛠️ Perintah Utama
 
+### Install Full VPS
 ```bash
-devculture              # Buka panel interaktif
-devculture status       # Status sistem & services
-devculture restart      # Restart semua service
-devculture update       # Update ke versi terbaru
-devculture ssl          # Renew SSL certificate
-devculture log          # Lihat log instalasi
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/install.sh)
+```
+
+### Buat Akun SSH + WebSocket
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/ssh/adduser-ssh.sh)
+```
+
+### Install WebSocket Services
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/websocket/insshws.sh)
+```
+
+### Setup SSH + Panel
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/setup.sh)
+```
+
+### Auto Sync & Update Semua Script
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/sync.sh)
+```
+
+### Install Dependencies
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/dependencies.sh)
+```
+
+### Uninstall
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/tuyulbodo99/devculture-vps/main/uninstall.sh)
 ```
 
 ---
 
-## 🗂️ Struktur Repo
+## 🌐 Ekosistem DevCulture
+
+| Repository | Fungsi | Install |
+|------------|--------|---------|
+| 🟣 [devculture-vps](https://github.com/tuyulbodo99/devculture-vps) | Core Panel + SSH + WebSocket | `install.sh` |
+| 🟣 [hokagescript](https://github.com/tuyulbodo99/hokagescript) | Menu Layanan & Services | `setup.sh` |
+| 🟣 [vpnscript](https://github.com/tuyulbodo99/vpnscript) | Full VPN Installer (OpenVPN, WireGuard) | `premi.sh` |
+| 🟣 [vps-script](https://github.com/tuyulbodo99/vps-script) | SSH Tunnel Setup | `setup.sh` |
+| 🟣 [ijin](https://github.com/tuyulbodo99/ijin) | Sistem Lisensi & Perizinan VPS | `check-ijin.sh` |
+
+---
+
+## 📱 Konfigurasi WebSocket (HTTP Injector / NPay / NetSpark)
 
 ```
-devculture-vps/
-├── install.sh          # 🚀 Installer utama (one-click)
-├── setup.sh            # Setup core (SSH + Xray + VPN)
-├── sync.sh             # 🔗 Central sync system
-├── devculture          # Panel management script
-├── uninstall.sh        # Uninstaller
-├── lib/                # Shared utilities
-├── ssh/                # SSH & Dropbear scripts
-├── xray/               # Xray installation
-├── bot/                # Telegram bot
-├── ssl/                # SSL auto-renewal
-├── vpn/                # VPN configs
-├── websocket/          # WebSocket setup
-└── update/             # Update scripts
+Proxy Type   : SSH
+SSH Host     : [IP VPS kamu]
+SSH Port     : 22
+SSH User     : [username]
+SSH Pass     : [password]
+Remote Proxy : 127.0.0.1:8080
+Listen Port  : 8989
+
+Payload:
+GET wss://bug.com/ HTTP/1.1[crlf]
+Host: bug.com[crlf]
+Upgrade: websocket[crlf][crlf]
 ```
 
 ---
 
-## 🔧 Requirements
+## 🖥️ Persyaratan Sistem
 
-| Komponen | Keterangan |
-|----------|------------|
-| OS | Debian 10/11/12 · Ubuntu 20.04/22.04 |
-| Akses | **Root** (`sudo` atau `su -`) |
-| RAM | Min. 256 MB |
-| Disk | Min. 300 MB free |
-| Network | IP Publik + Domain |
+| Komponen | Minimum | Rekomendasi |
+|----------|---------|-------------|
+| OS | Ubuntu 20.04 | Ubuntu 22.04 LTS |
+| RAM | 512 MB | 1 GB+ |
+| Storage | 5 GB | 10 GB+ |
+| CPU | 1 Core | 2 Core+ |
+| Akses | Root | Root |
 
 ---
 
 <div align="center">
 
-[![Telegram](https://img.shields.io/badge/Order%20%26%20Support-@devculturebot-9b59b6?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/devculturebot)
-[![GitHub](https://img.shields.io/badge/GitHub-tuyulbodo99-1a1a2e?style=for-the-badge&logo=github&logoColor=white)](https://github.com/tuyulbodo99)
+**DevCulture VPS Store** · [github.com/tuyulbodo99](https://github.com/tuyulbodo99) · [@devculturebot](https://t.me/devculturebot)
 
-<sub>© 2024 DevCulture VPS Store · Built with 🟣 by <a href="https://github.com/tuyulbodo99">tuyulbodo99</a></sub>
+![Footer](https://capsule-render.vercel.app/api?type=waving&color=a855f7&height=80&section=footer)
 
 </div>
